@@ -1,1658 +1,1903 @@
 <!DOCTYPE html>
-<html lang="es" class="h-full bg-slate-900 font-sans select-none">
+<html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HogarControl - Gestión de Empleadas de Hogar</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        brand: {
-                            50: '#f0fdfa',
-                            100: '#ccfbf1',
-                            500: '#14b8a6',
-                            600: '#0d9488',
-                            700: '#0f766e',
-                            800: '#115e59',
-                            900: '#134e4a',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
-    <!-- FontAwesome Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 9999px; }
-        .touch-action-manipulation { touch-action: manipulation; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HogarSync — Control Horario, Tareas y Chat</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          screens: {
+            landscape: { raw: '(orientation: landscape)' },
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    @keyframes pulse-glow {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.75);
+        transform: scale(1);
+      }
+      50% {
+        box-shadow: 0 0 0 10px rgba(234, 179, 8, 0);
+        transform: scale(1.03);
+      }
+    }
+    .chat-alert-glow {
+      animation: pulse-glow 1.35s infinite;
+    }
+    @media (orientation: landscape) and (min-width: 640px) {
+      .employee-main-grid {
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 1.25rem;
+        align-items: start;
+      }
+    }
+  </style>
 </head>
-<body class="h-full text-slate-100 bg-slate-900 antialiased selection:bg-teal-500 selection:text-white pb-16 md:pb-0">
+<body class="bg-slate-100 text-slate-800 min-h-screen antialiased selection:bg-indigo-600 selection:text-white">
+  <div id="app" class="min-h-screen flex flex-col"></div>
 
-    <div id="app" class="min-h-screen flex flex-col">
-        <!-- HEADER PRINCIPAL -->
-        <header class="bg-slate-950 border-b border-slate-800 sticky top-0 z-30 shadow-lg">
-            <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-                <!-- Logo & Código del Hogar -->
-                <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 rounded-2xl bg-teal-500 text-slate-950 font-black flex items-center justify-center text-xl shadow-lg shadow-teal-500/20">
-                        <i class="fa-solid fa-house-chimney-user"></i>
-                    </div>
-                    <div>
-                        <h1 class="font-bold text-base sm:text-lg leading-tight flex items-center gap-2 text-white">
-                            HogarControl
-                            <span id="syncBadge" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium">
-                                Almacenado localmente
-                            </span>
-                        </h1>
-                        <p class="text-xs text-slate-400 flex items-center gap-1.5">
-                            Hogar: <span id="headerHouseholdCode" class="font-mono font-bold text-teal-400">HOGAR-2026</span>
-                        </p>
-                    </div>
-                </div>
+  <script>
+    const STORAGE_KEY = 'hogarsync_v2_state';
+    const CLOUD_CONFIG_KEY = 'hogarsync_v2_cloud';
 
-                <!-- Selector de Rol -->
-                <div class="flex items-center space-x-2">
-                    <button onclick="openRoleSelectorModal()" id="currentRoleBadge" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 shadow-sm bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700">
-                        <i class="fa-solid fa-users-gear text-teal-400"></i>
-                        <span id="roleBadgeText">Rol: Tablet Cocina</span>
-                        <i class="fa-solid fa-chevron-down text-[10px] opacity-60"></i>
-                    </button>
+    const DEFAULT_STATE = {
+      householdCode: 'HOGAR-8421',
+      masterPassword: 'admin',
+      employees: [
+        {
+          id: 'emp_maria',
+          name: 'María',
+          password: '1234',
+          dailyHours: 6,
+          rates: [
+            { rate: 10, startDate: '2026-01-01' }
+          ]
+        }
+      ],
+      shifts: [],
+      tasks: [],
+      messages: [],
+      closedMonths: {},
+      lastUpdated: Date.now()
+    };
+
+    function getTodayISO() {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function getMonthKey(dateStr) {
+      return dateStr ? dateStr.slice(0, 7) : getTodayISO().slice(0, 7);
+    }
+
+    function formatTimeHHMM(ms) {
+      if (!ms) return '--:--';
+      const d = new Date(ms);
+      return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function formatDurationHM(totalMinutes) {
+      const mins = Math.max(0, Math.floor(totalMinutes));
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return `${h}h ${String(m).padStart(2, '0')}m`;
+    }
+
+    function formatDurationHMS(ms) {
+      const totalSec = Math.max(0, Math.floor(ms / 1000));
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    function getRateForDate(employee, dateStr) {
+      if (!employee || !Array.isArray(employee.rates) || employee.rates.length === 0) {
+        return 10;
+      }
+      const sorted = [...employee.rates].sort((a, b) => a.startDate.localeCompare(b.startDate));
+      let activeRate = sorted[0].rate;
+      for (const r of sorted) {
+        if (r.startDate <= dateStr) {
+          activeRate = Number(r.rate);
+        } else {
+          break;
+        }
+      }
+      return Number(activeRate) || 10;
+    }
+
+    function seedInitialDemoData(state) {
+      if (state.shifts.length > 0 || state.tasks.length > 0 || state.messages.length > 0) {
+        return state;
+      }
+      const today = getTodayISO();
+      const d1 = new Date();
+      d1.setDate(d1.getDate() - 2);
+      const dayMinus2 = d1.toISOString().slice(0, 10);
+
+      const d2 = new Date();
+      d2.setDate(d2.getDate() - 1);
+      const dayMinus1 = d2.toISOString().slice(0, 10);
+
+      state.shifts = [
+        {
+          id: 'sh_demo_1',
+          employeeId: 'emp_maria',
+          date: dayMinus2,
+          startTime: new Date(`${dayMinus2}T09:00:00`).getTime(),
+          endTime: new Date(`${dayMinus2}T14:30:00`).getTime(),
+          minutes: 330,
+          rate: 10,
+          status: 'confirmed',
+          confirmedBy: 'Propietario 1'
+        },
+        {
+          id: 'sh_demo_2',
+          employeeId: 'emp_maria',
+          date: dayMinus1,
+          startTime: new Date(`${dayMinus1}T10:00:00`).getTime(),
+          endTime: new Date(`${dayMinus1}T13:45:00`).getTime(),
+          minutes: 225,
+          rate: 10,
+          status: 'pending',
+          confirmedBy: null
+        }
+      ];
+
+      state.tasks = [
+        {
+          id: 'tk_demo_1',
+          employeeId: 'emp_maria',
+          date: today,
+          title: 'Limpiar cristales del salón y balcón',
+          priority: 'alta',
+          completed: false
+        },
+        {
+          id: 'tk_demo_2',
+          employeeId: 'emp_maria',
+          date: today,
+          title: 'Organizar armario de ropa de abrigo',
+          priority: 'media',
+          completed: false
+        }
+      ];
+
+      state.messages = [
+        {
+          id: 'msg_demo_1',
+          employeeId: 'emp_maria',
+          sender: 'Sistema',
+          text: `Turno confirmado (${dayMinus2}): 5h 30m — 55,00 €`,
+          timestamp: Date.now() - 86400000 * 2,
+          isSystem: true
+        }
+      ];
+
+      return state;
+    }
+
+    function loadCloudConfig() {
+      try {
+        const raw = localStorage.getItem(CLOUD_CONFIG_KEY);
+        return raw ? JSON.parse(raw) : { enabled: false, firebaseDbUrl: '' };
+      } catch {
+        return { enabled: false, firebaseDbUrl: '' };
+      }
+    }
+
+    function saveCloudConfig(cfg) {
+      localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(cfg));
+    }
+
+    function loadLocalState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          const initial = seedInitialDemoData(structuredClone(DEFAULT_STATE));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
+          return initial;
+        }
+        return JSON.parse(raw);
+      } catch {
+        return seedInitialDemoData(structuredClone(DEFAULT_STATE));
+      }
+    }
+
+    let cloudConfig = loadCloudConfig();
+    let appState = loadLocalState();
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramCode = urlParams.get('hogar');
+    const paramDb = urlParams.get('db');
+    if (paramCode) {
+      appState.householdCode = paramCode.trim().toUpperCase();
+    }
+    if (paramDb) {
+      cloudConfig.firebaseDbUrl = decodeURIComponent(paramDb).replace(/\/+$/, '');
+      cloudConfig.enabled = true;
+      saveCloudConfig(cloudConfig);
+    }
+
+    let ui = {
+      view: 'landing', // landing | owner_auth | owner_dash | emp_select | emp_auth | emp_space
+      selectedEmployeeId: appState.employees[0]?.id || null,
+      ownerLabel: 'Propietario 1 (Máster)',
+      editModeUnlocked: false,
+      employeeTab: 'home', // home | calendar | chat
+      ownerTab: 'overview', // overview | employees | tasks | calendar | chat | sync
+      calendarMonth: getTodayISO().slice(0, 7),
+      selectedCalendarDate: getTodayISO(),
+      toast: null,
+      unreadChatForEmployee: {},
+      lastSeenMessageCount: {},
+      modal: null, // null | { type: 'confirm_checkout', shiftId } | { type: 'adjust_shift', shiftId } | { type: 'edit_employee', empId } | { type: 'cloud_modal' }
+      authError: ''
+    };
+
+    function showToast(msg, type = 'info') {
+      ui.toast = { msg, type };
+      render();
+      clearTimeout(showToast._timer);
+      showToast._timer = setTimeout(() => {
+        ui.toast = null;
+        render();
+      }, 3200);
+    }
+
+    function saveState(pushCloud = true) {
+      appState.lastUpdated = Date.now();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+      if (pushCloud && cloudConfig.enabled && cloudConfig.firebaseDbUrl) {
+        pushToFirebase().catch(() => {});
+      }
+    }
+
+    function getFirebaseEndpoint() {
+      const base = cloudConfig.firebaseDbUrl.replace(/\/+$/, '');
+      const code = encodeURIComponent(appState.householdCode || 'HOGAR-DEFAULT');
+      return `${base}/households/${code}.json`;
+    }
+
+    async function pushToFirebase() {
+      if (!cloudConfig.enabled || !cloudConfig.firebaseDbUrl) return;
+      await fetch(getFirebaseEndpoint(), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(appState)
+      });
+    }
+
+    async function pullFromFirebase(silent = true) {
+      if (!cloudConfig.enabled || !cloudConfig.firebaseDbUrl) return;
+      try {
+        const res = await fetch(`${getFirebaseEndpoint()}?t=${Date.now()}`);
+        if (!res.ok) return;
+        const remote = await res.json();
+        if (!remote || typeof remote !== 'object') return;
+        if ((remote.lastUpdated || 0) > (appState.lastUpdated || 0)) {
+          appState = { ...DEFAULT_STATE, ...remote };
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+          detectNewChatMessages();
+          render();
+          if (!silent) showToast('Datos sincronizados desde la nube.', 'success');
+        }
+      } catch {
+        if (!silent) showToast('No se pudo conectar con la nube.', 'error');
+      }
+    }
+
+    function detectNewChatMessages() {
+      appState.employees.forEach((emp) => {
+        const empMsgs = appState.messages.filter((m) => m.employeeId === emp.id);
+        const prevCount = ui.lastSeenMessageCount[emp.id] ?? empMsgs.length;
+        if (empMsgs.length > prevCount) {
+          const isViewingThisChat =
+            (ui.view === 'emp_space' && ui.selectedEmployeeId === emp.id && ui.employeeTab === 'chat') ||
+            (ui.view === 'owner_dash' && ui.selectedEmployeeId === emp.id && ui.ownerTab === 'chat');
+          if (!isViewingThisChat) {
+            ui.unreadChatForEmployee[emp.id] = true;
+          } else {
+            ui.lastSeenMessageCount[emp.id] = empMsgs.length;
+          }
+        }
+      });
+    }
+
+    function markChatRead(empId) {
+      const count = appState.messages.filter((m) => m.employeeId === empId).length;
+      ui.lastSeenMessageCount[empId] = count;
+      ui.unreadChatForEmployee[empId] = false;
+    }
+
+    function addSystemMessage(employeeId, text) {
+      appState.messages.push({
+        id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        employeeId,
+        sender: 'Sistema',
+        text,
+        timestamp: Date.now(),
+        isSystem: true
+      });
+      detectNewChatMessages();
+    }
+
+    function addChatMessage(employeeId, sender, text) {
+      const clean = text.trim();
+      if (!clean) return;
+      appState.messages.push({
+        id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        employeeId,
+        sender,
+        text: clean,
+        timestamp: Date.now(),
+        isSystem: false
+      });
+      markChatRead(employeeId);
+      saveState(true);
+      render();
+    }
+
+    function getActiveShift(employeeId) {
+      return appState.shifts.find((s) => s.employeeId === employeeId && s.status === 'active') || null;
+    }
+
+    function clockIn(employeeId) {
+      const emp = appState.employees.find((e) => e.id === employeeId);
+      if (!emp) return;
+      if (getActiveShift(employeeId)) {
+        showToast('Ya hay una entrada activa.', 'error');
+        return;
+      }
+      const now = Date.now();
+      const today = getTodayISO();
+      const shift = {
+        id: `sh_${now}_${Math.random().toString(36).slice(2, 6)}`,
+        employeeId,
+        date: today,
+        startTime: now,
+        endTime: null,
+        minutes: 0,
+        rate: getRateForDate(emp, today),
+        status: 'active',
+        confirmedBy: null
+      };
+      appState.shifts.push(shift);
+      addSystemMessage(
+        employeeId,
+        `🟢 ENTRADA de ${emp.name} a las ${formatTimeHHMM(now)} (${today}).`
+      );
+      saveState(true);
+      showToast(`Entrada fichada a las ${formatTimeHHMM(now)}`, 'success');
+      render();
+    }
+
+    function executeClockOut(shiftId) {
+      const shift = appState.shifts.find((s) => s.id === shiftId);
+      if (!shift || shift.status !== 'active') return;
+      const emp = appState.employees.find((e) => e.id === shift.employeeId);
+      const now = Date.now();
+      const elapsedMinutes = Math.max(1, (now - shift.startTime) / 60000);
+      shift.endTime = now;
+      shift.minutes = elapsedMinutes;
+      shift.rate = getRateForDate(emp, shift.date);
+      shift.status = 'pending';
+
+      addSystemMessage(
+        shift.employeeId,
+        `🟠 SALIDA de ${emp ? emp.name : 'Empleada'} a las ${formatTimeHHMM(now)} (${formatDurationHM(elapsedMinutes)}). Pendiente de confirmar por Propietario.`
+      );
+      ui.modal = null;
+      saveState(true);
+      showToast('Salida registrada. Pendiente de confirmación del propietario.', 'info');
+      render();
+    }
+
+    function confirmShift(shiftId, customEndTimeMs = null) {
+      const shift = appState.shifts.find((s) => s.id === shiftId);
+      if (!shift) return;
+      const emp = appState.employees.find((e) => e.id === shift.employeeId);
+      if (customEndTimeMs && customEndTimeMs > shift.startTime) {
+        shift.endTime = customEndTimeMs;
+      } else if (!shift.endTime) {
+        shift.endTime = Date.now();
+      }
+      const exactMinutes = Math.max(0, (shift.endTime - shift.startTime) / 60000);
+      shift.minutes = exactMinutes;
+      shift.rate = getRateForDate(emp, shift.date);
+      shift.status = 'confirmed';
+      shift.confirmedBy = ui.ownerLabel;
+
+      const amount = ((exactMinutes / 60) * shift.rate).toFixed(2).replace('.', ',');
+      addSystemMessage(
+        shift.employeeId,
+        `✅ Turno CONFIRMADO (${shift.date}, salida ${formatTimeHHMM(shift.endTime)}): ${formatDurationHM(exactMinutes)} (${amount} €) sumados al total.`
+      );
+      ui.modal = null;
+      saveState(true);
+      showToast('Turno confirmado y sumado al cálculo mensual.', 'success');
+      render();
+    }
+
+    function getOvertimeAlerts() {
+      const alerts = [];
+      const now = Date.now();
+      appState.shifts.forEach((s) => {
+        if (s.status !== 'active') return;
+        const emp = appState.employees.find((e) => e.id === s.employeeId);
+        if (!emp) return;
+        const allowedMs = (Number(emp.dailyHours || 8) + 1) * 3600000;
+        const workedMs = now - s.startTime;
+        if (workedMs > allowedMs) {
+          alerts.push({
+            shift: s,
+            employee: emp,
+            workedMinutes: workedMs / 60000,
+            allowedHours: Number(emp.dailyHours || 8)
+          });
+        }
+      });
+      return alerts;
+    }
+
+    function toggleTask(taskId) {
+      const task = appState.tasks.find((t) => t.id === taskId);
+      if (!task) return;
+      task.completed = !task.completed;
+      saveState(true);
+      render();
+    }
+
+    function getMonthSummary(employeeId, monthKey) {
+      const emp = appState.employees.find((e) => e.id === employeeId);
+      const dayShifts = appState.shifts.filter(
+        (s) => s.employeeId === employeeId && getMonthKey(s.date) === monthKey
+      );
+      let confirmedMinutes = 0;
+      let pendingMinutes = 0;
+      let confirmedEuros = 0;
+      let pendingEuros = 0;
+
+      dayShifts.forEach((s) => {
+        const mins = Number(s.minutes || 0);
+        const rate = Number(s.rate ?? getRateForDate(emp, s.date));
+        const euros = (mins / 60) * rate;
+        if (s.status === 'confirmed') {
+          confirmedMinutes += mins;
+          confirmedEuros += euros;
+        } else if (s.status === 'pending') {
+          pendingMinutes += mins;
+          pendingEuros += euros;
+        }
+      });
+
+      return {
+        confirmedMinutes,
+        pendingMinutes,
+        confirmedEuros,
+        pendingEuros,
+        isClosed: Boolean(appState.closedMonths[`${employeeId}_${monthKey}`])
+      };
+    }
+
+    function getInviteLink(roleHint = 'empleado') {
+      const baseUrl = `${window.location.origin}${window.location.pathname}`;
+      const params = new URLSearchParams();
+      params.set('hogar', appState.householdCode);
+      params.set('rol', roleHint);
+      if (cloudConfig.enabled && cloudConfig.firebaseDbUrl) {
+        params.set('db', encodeURIComponent(cloudConfig.firebaseDbUrl));
+      }
+      return `${baseUrl}?${params.toString()}`;
+    }
+
+    function renderHeader() {
+      const alerts = getOvertimeAlerts();
+      const canSeeOvertime = ui.view === 'owner_dash' || ui.view === 'owner_auth' || ui.editModeUnlocked;
+
+      return `
+        <header class="bg-slate-900 text-white shadow-md sticky top-0 z-30">
+          <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-3">
+              <button onclick="goLanding()" class="flex items-center gap-2 text-left group">
+                <span class="w-9 h-9 rounded-xl bg-indigo-500 flex items-center justify-center font-bold text-lg shadow">HS</span>
+                <div>
+                  <div class="font-bold leading-tight tracking-tight group-hover:text-indigo-300 transition">HogarSync</div>
+                  <div class="text-[11px] text-slate-400">
+                    Código: <span class="font-mono text-indigo-300">${appState.householdCode}</span>
+                    · ${cloudConfig.enabled && cloudConfig.firebaseDbUrl ? '<span class="text-emerald-400">Nube activa</span>' : '<span class="text-amber-300">Modo local</span>'}
+                  </div>
                 </div>
+              </button>
             </div>
+
+            <div class="flex items-center gap-2 flex-wrap">
+              ${
+                canSeeOvertime && alerts.length > 0
+                  ? `<button onclick="openOvertimeModal('${alerts[0].shift.id}')" class="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-semibold animate-pulse flex items-center gap-1.5">
+                      <span>⚠️ Olvido salida (${alerts.length})</span>
+                    </button>`
+                  : ''
+              }
+
+              <button onclick="openCloudModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700">
+                🔗 Enlace / Nube
+              </button>
+
+              ${
+                ui.view !== 'landing'
+                  ? `<button onclick="goLanding()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700">
+                      Inicio
+                    </button>`
+                  : ''
+              }
+            </div>
+          </div>
         </header>
+      `;
+    }
 
-        <!-- ALERTA DE HORAS EXTRA (PROPIETARIOS) -->
-        <div id="overtimeAlertBanner" class="hidden bg-rose-950 border-b border-rose-800 text-rose-200 px-4 py-3 shadow-inner">
-            <div class="max-w-7xl mx-auto flex items-center justify-between gap-3 text-xs sm:text-sm">
-                <div class="flex items-center gap-2">
-                    <i class="fa-solid fa-triangle-exclamation text-rose-400 text-lg animate-bounce"></i>
-                    <div>
-                        <span class="font-bold text-white">¡Alerta de Jornada Superada!</span>
-                        <span id="overtimeAlertText">Wendy lleva más de 1 hora sobre su horario contractual sin fichar salida.</span>
-                    </div>
-                </div>
-                <button onclick="switchOwnerTab('validation')" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex-shrink-0">
-                    Revisar Fichaje
-                </button>
+    function renderLanding() {
+      return `
+        <div class="max-w-3xl mx-auto w-full px-4 py-10 flex-1 flex flex-col justify-center">
+          <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 sm:p-8">
+            <div class="text-center mb-8">
+              <span class="inline-block px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold mb-2">
+                Hogar · <span class="font-mono">${appState.householdCode}</span>
+              </span>
+              <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900">¿Quién va a usar la app?</h1>
+              <p class="text-slate-500 text-sm mt-1">Selecciona tu perfil para fichar, revisar tareas, calendario o gestionar el hogar.</p>
             </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <button onclick="selectRole('owner')" class="group p-6 rounded-2xl border-2 border-slate-200 hover:border-indigo-600 bg-slate-50 hover:bg-indigo-50/40 text-left transition flex flex-col justify-between gap-4">
+                <div>
+                  <div class="w-12 h-12 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-xl font-bold mb-4 group-hover:scale-105 transition">
+                    P
+                  </div>
+                  <h2 class="text-xl font-bold text-slate-900">Propietario</h2>
+                  <p class="text-sm text-slate-600 mt-1">
+                    Acceso Máster y Modo Edición (con contraseña). Gestiona empleadas, tarifas, tareas, confirmaciones y enlaces.
+                  </p>
+                </div>
+                <span class="text-sm font-semibold text-indigo-700">Entrar como Propietario →</span>
+              </button>
+
+              <button onclick="selectRole('employee')" class="group p-6 rounded-2xl border-2 border-slate-200 hover:border-emerald-600 bg-slate-50 hover:bg-emerald-50/40 text-left transition flex flex-col justify-between gap-4">
+                <div>
+                  <div class="w-12 h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-xl font-bold mb-4 group-hover:scale-105 transition">
+                    E
+                  </div>
+                  <h2 class="text-xl font-bold text-slate-900">Empleado</h2>
+                  <p class="text-sm text-slate-600 mt-1">
+                    Elige tu nombre, introduce tu contraseña, ficha entrada/salida, consulta tus tareas especiales, calendario y chat.
+                  </p>
+                </div>
+                <span class="text-sm font-semibold text-emerald-700">Entrar como Empleado →</span>
+              </button>
+            </div>
+          </div>
         </div>
+      `;
+    }
 
-        <!-- CONTENIDO PRINCIPAL -->
-        <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
+    function renderOwnerAuth() {
+      return `
+        <div class="max-w-md mx-auto w-full px-4 py-12 flex-1 flex items-center">
+          <form onsubmit="submitOwnerAuth(event)" class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 w-full space-y-4">
+            <h2 class="text-xl font-bold text-slate-900">Acceso Propietario / Modo Edición</h2>
+            <p class="text-xs text-slate-500">
+              La contraseña de Propietario 1 (Máster) y del Modo Edición es la misma (por defecto: <span class="font-mono font-semibold">admin</span>).
+            </p>
 
-            <!-- VISTA 1: ROL PROPIETARIOS -->
-            <div id="viewOwner" class="space-y-6 hidden">
-
-                <!-- BARRA DE SELECCIÓN DE EMPLEADA -->
-                <div class="bg-slate-800/80 rounded-2xl p-3 border border-slate-700/70 flex items-center justify-between gap-3 overflow-x-auto">
-                    <div class="flex items-center space-x-2">
-                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider pl-1">Gestionar:</span>
-                        <div id="ownerEmployeePills" class="flex items-center gap-2"></div>
-                    </div>
-                    <button onclick="openEmployeeManagerModal()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-teal-300 font-bold text-xs rounded-xl border border-slate-600 transition-colors flex items-center gap-1.5 flex-shrink-0">
-                        <i class="fa-solid fa-user-gear"></i> Perfiles & Tarifas
-                    </button>
-                </div>
-
-                <!-- PESTAÑAS PROPIETARIO -->
-                <nav class="flex space-x-2 border-b border-slate-800 pb-2 overflow-x-auto">
-                    <button onclick="switchOwnerTab('validation')" id="ownerTab-validation" class="owner-tab px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-teal-600 text-white flex items-center gap-2 transition-all">
-                        <i class="fa-solid fa-clock-rotate-left"></i> Validar Fichajes
-                        <span id="pendingValidationBadge" class="hidden bg-amber-400 text-slate-950 text-[10px] font-black px-1.5 py-0.5 rounded-full">0</span>
-                    </button>
-                    <button onclick="switchOwnerTab('calendar')" id="ownerTab-calendar" class="owner-tab px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2 transition-all">
-                        <i class="fa-solid fa-calendar-days"></i> Calendario & Nómina
-                    </button>
-                    <button onclick="switchOwnerTab('tasks')" id="ownerTab-tasks" class="owner-tab px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2 transition-all">
-                        <i class="fa-solid fa-list-check"></i> Tareas Especiales
-                    </button>
-                    <button onclick="switchOwnerTab('chat')" id="ownerTab-chat" class="owner-tab px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2 transition-all">
-                        <i class="fa-solid fa-comments"></i> Mensajes Privados
-                    </button>
-                    <button onclick="switchOwnerTab('settings')" id="ownerTab-settings" class="owner-tab px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2 transition-all">
-                        <i class="fa-solid fa-sliders"></i> Opciones
-                    </button>
-                </nav>
-
-                <!-- TAB: BANDEJA DE VALIDACIÓN -->
-                <div id="ownerTabContent-validation" class="owner-tab-content space-y-6">
-                    <div class="bg-slate-800 rounded-3xl p-6 border border-slate-700 shadow-lg space-y-4">
-                        <div class="flex items-center justify-between border-b border-slate-700 pb-4">
-                            <div>
-                                <h3 class="text-base font-bold text-white flex items-center gap-2">
-                                    <i class="fa-solid fa-check-to-slot text-teal-400"></i> Turnos Pendientes de Confirmar
-                                </h3>
-                                <p class="text-xs text-slate-400 mt-0.5">Al confirmar, las horas se suman a la liquidación oficial del mes.</p>
-                            </div>
-                        </div>
-                        <div id="pendingShiftsList" class="space-y-3 min-h-[100px]"></div>
-                    </div>
-
-                    <div class="bg-slate-800 rounded-3xl p-6 border border-slate-700 shadow-lg flex flex-col md:flex-row items-center justify-between gap-6">
-                        <div class="flex items-center space-x-4">
-                            <div id="ownerActiveEmpAvatar" class="w-16 h-16 rounded-2xl bg-teal-600 text-white font-bold text-2xl flex items-center justify-center shadow-lg">W</div>
-                            <div>
-                                <h4 id="ownerActiveEmpName" class="text-lg font-bold text-white">Wendy</h4>
-                                <p id="ownerActiveEmpContract" class="text-xs text-slate-400">Jornada: 4h/día · Tarifa: 10.50 €/h</p>
-                                <div id="ownerActiveEmpStatusBadge" class="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-700 text-slate-300">
-                                    <span class="w-2.5 h-2.5 rounded-full bg-slate-400"></span> Fuera de servicio
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="text-center md:text-right bg-slate-900/60 p-4 rounded-2xl border border-slate-700/60 min-w-[200px]">
-                            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tiempo en Vivo Hoy</p>
-                            <p id="ownerLiveTimer" class="font-mono text-3xl font-black text-teal-400 mt-1">00:00:00</p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- TAB: CALENDARIO Y NÓMINA -->
-                <div id="ownerTabContent-calendar" class="owner-tab-content hidden space-y-6">
-                    <div class="bg-slate-800 rounded-3xl p-6 border border-slate-700 shadow-lg space-y-6">
-                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700 pb-4">
-                            <div class="flex items-center space-x-3">
-                                <button onclick="changeOwnerMonth(-1)" class="p-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white">
-                                    <i class="fa-solid fa-chevron-left"></i>
-                                </button>
-                                <h3 id="ownerCalendarMonthTitle" class="text-lg font-bold text-white min-w-[160px] text-center">Noviembre 2026</h3>
-                                <button onclick="changeOwnerMonth(1)" class="p-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white">
-                                    <i class="fa-solid fa-chevron-right"></i>
-                                </button>
-                            </div>
-
-                            <div class="flex flex-wrap items-center gap-4 bg-slate-900 p-4 rounded-2xl border border-slate-700">
-                                <div>
-                                    <p class="text-[10px] uppercase font-bold text-slate-400">Horas Confirmadas</p>
-                                    <p id="ownerCalTotalHours" class="text-lg font-bold text-white">0h 0m</p>
-                                </div>
-                                <div class="h-8 w-px bg-slate-700"></div>
-                                <div>
-                                    <p class="text-[10px] uppercase font-bold text-teal-400">Total a Pagar (€)</p>
-                                    <p id="ownerCalTotalPay" class="text-xl font-black text-teal-400">0,00 €</p>
-                                </div>
-                                <button onclick="closeAndPayMonth()" class="ml-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md transition-colors flex items-center gap-1.5">
-                                    <i class="fa-solid fa-file-invoice-dollar"></i> Cerrar Mes / Marcar Pagado
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- TOGGLE EUROS PARA EMPLEADA -->
-                        <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-700/80 flex items-center justify-between">
-                            <div class="flex items-center space-x-3">
-                                <i class="fa-solid fa-eye text-teal-400 text-lg"></i>
-                                <div>
-                                    <p class="text-xs font-bold text-white">Mostrar acumulado en Euros (€) a la Empleada</p>
-                                    <p class="text-[11px] text-slate-400">Si está activado, la empleada verá los euros calculados en su pantalla.</p>
-                                </div>
-                            </div>
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" id="toggleShowEuroToEmp" onchange="handleToggleEuroVisibility(this.checked)" class="sr-only peer">
-                                <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-500"></div>
-                            </label>
-                        </div>
-
-                        <!-- GRID CALENDARIO -->
-                        <div class="space-y-2">
-                            <div class="grid grid-cols-7 gap-1 text-center text-xs font-bold text-slate-400 uppercase py-2">
-                                <div>Lun</div><div>Mar</div><div>Mié</div><div>Jue</div><div>Vie</div><div>Sáb</div><div>Dom</div>
-                            </div>
-                            <div id="ownerCalendarGrid" class="grid grid-cols-7 gap-1.5"></div>
-                        </div>
-                    </div>
-
-                    <!-- HISTORIAL DE MESES PAGADOS -->
-                    <div class="bg-slate-800 rounded-3xl p-6 border border-slate-700 shadow-lg space-y-4">
-                        <h4 class="text-sm font-bold text-white flex items-center gap-2">
-                            <i class="fa-solid fa-box-archive text-teal-400"></i> Historial de Meses Liquidados
-                        </h4>
-                        <div id="paidMonthsHistoryList" class="space-y-2 text-xs"></div>
-                    </div>
-                </div>
-
-                <!-- TAB: TAREAS ESPECIALES -->
-                <div id="ownerTabContent-tasks" class="owner-tab-content hidden space-y-6">
-                    <div class="bg-slate-800 rounded-3xl p-6 border border-slate-700 shadow-lg space-y-4">
-                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-700 pb-4">
-                            <div>
-                                <h3 class="text-base font-bold text-white flex items-center gap-2">
-                                    <i class="fa-solid fa-list-check text-teal-400"></i> Tareas Especiales del Día
-                                </h3>
-                                <p class="text-xs text-slate-400">Asigna tareas específicas o con prioridad para la empleada seleccionada.</p>
-                            </div>
-                            <button onclick="openAddTaskModal()" class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs transition-colors shadow-md flex items-center gap-1.5">
-                                <i class="fa-solid fa-plus"></i> Añadir Tarea Especial
-                            </button>
-                        </div>
-                        <div id="ownerTasksList" class="space-y-3 min-h-[150px]"></div>
-                    </div>
-                </div>
-
-                <!-- TAB: CHAT 1 A 1 -->
-                <div id="ownerTabContent-chat" class="owner-tab-content hidden space-y-4">
-                    <div class="bg-slate-800 rounded-3xl border border-slate-700 shadow-lg flex flex-col h-[520px] overflow-hidden">
-                        <div class="bg-slate-950 p-4 border-b border-slate-800 flex items-center space-x-3">
-                            <div id="ownerChatAvatar" class="w-10 h-10 rounded-xl bg-teal-600 text-white font-bold flex items-center justify-center">W</div>
-                            <div>
-                                <h4 id="ownerChatEmpTitle" class="font-bold text-sm text-white">Chat Privado con Wendy</h4>
-                                <p class="text-[11px] text-slate-400">Canal directo 1 a 1 aislado de otros empleados</p>
-                            </div>
-                        </div>
-                        <div id="ownerChatContainer" class="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-900/60"></div>
-                        <form onsubmit="handleSendOwnerChatMessage(event)" class="p-3 bg-slate-950 border-t border-slate-800 flex items-center gap-2">
-                            <input type="text" id="ownerChatInput" placeholder="Escribe un mensaje..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500">
-                            <button type="submit" class="w-10 h-10 bg-teal-600 hover:bg-teal-500 text-white rounded-xl flex items-center justify-center">
-                                <i class="fa-solid fa-paper-plane text-xs"></i>
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
-                <!-- TAB: OPCIONES -->
-                <div id="ownerTabContent-settings" class="owner-tab-content hidden space-y-6">
-                    <div class="bg-slate-800 rounded-3xl p-6 border border-slate-700 shadow-lg space-y-6">
-                        <h3 class="text-base font-bold text-white border-b border-slate-700 pb-3 flex items-center gap-2">
-                            <i class="fa-solid fa-sliders text-teal-400"></i> Ajustes y Seguridad
-                        </h3>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-700/80 space-y-3">
-                                <h4 class="text-xs font-bold text-teal-400 uppercase">Código del Hogar</h4>
-                                <p class="text-xs text-slate-400">Código para identificar tu casa en varios dispositivos.</p>
-                                <div class="flex gap-2">
-                                    <input type="text" id="settingsHouseholdCode" class="flex-1 font-mono uppercase font-bold bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
-                                    <button onclick="saveSettingsHouseholdCode()" class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs">Cambiar</button>
-                                </div>
-                            </div>
-                            <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-700/80 space-y-3">
-                                <h4 class="text-xs font-bold text-amber-400 uppercase">PIN de Propietarios</h4>
-                                <p class="text-xs text-slate-400">Clave para acceder a este panel de administración.</p>
-                                <div class="flex gap-2">
-                                    <input type="password" id="settingsOwnerPin" placeholder="PIN (ej. 1234)" class="flex-1 font-mono font-bold bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
-                                    <button onclick="saveSettingsOwnerPin()" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs">Guardar PIN</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Identificador en este dispositivo</label>
+              <select id="ownerLabelInput" class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm bg-white">
+                <option value="Propietario 1 (Máster)" ${ui.ownerLabel === 'Propietario 1 (Máster)' ? 'selected' : ''}>Propietario 1 (Máster)</option>
+                <option value="Propietario 2" ${ui.ownerLabel === 'Propietario 2' ? 'selected' : ''}>Propietario 2</option>
+                <option value="Propietario 3" ${ui.ownerLabel === 'Propietario 3' ? 'selected' : ''}>Propietario 3</option>
+              </select>
             </div>
 
-
-            <!-- VISTA 2: TABLET COCINA (APAISADO 2 COLUMNAS) -->
-            <div id="viewTablet" class="space-y-6 hidden">
-
-                <!-- PANTALLA SELECCIÓN DE EMPLEADA -->
-                <div id="tabletEmployeeSelectorWrapper" class="space-y-6 max-w-4xl mx-auto py-4">
-                    <div class="text-center space-y-2">
-                        <span class="px-3.5 py-1.5 bg-teal-500/10 text-teal-400 border border-teal-500/30 text-xs font-bold rounded-full inline-flex items-center gap-2">
-                            <i class="fa-solid fa-tablet-screen-button"></i> Tablet Cocina - Selecciona tu nombre para fichar
-                        </span>
-                        <h2 class="text-2xl sm:text-3xl font-black text-white">Control Horario & Tareas</h2>
-                    </div>
-                    <div id="tabletEmployeeSelectorGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
-                </div>
-
-                <!-- VISTA APAISADA AL AUTENTICAR EMPLEADA -->
-                <div id="tabletActiveEmployeeCard" class="hidden w-full">
-                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-
-                        <!-- COLUMNA IZQUIERDA: PERFIL, CRONÓMETRO Y FICHAJE -->
-                        <div class="lg:col-span-5 space-y-4">
-                            <div class="bg-slate-800 rounded-3xl p-5 border border-slate-700 shadow-xl space-y-4">
-                                <div class="flex items-center justify-between border-b border-slate-700/80 pb-3">
-                                    <div class="flex items-center space-x-3">
-                                        <div id="tabletEmpAvatar" class="w-14 h-14 rounded-2xl bg-teal-600 text-white font-black text-2xl flex items-center justify-center shadow-lg">W</div>
-                                        <div>
-                                            <h3 id="tabletEmpName" class="text-xl font-black text-white">Wendy</h3>
-                                            <div id="tabletEmpStatusBadge" class="mt-1 inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-slate-700 text-slate-300">
-                                                <span class="w-2 h-2 rounded-full bg-slate-400"></span> Fuera de servicio
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <button onclick="deselectTabletEmployee()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5">
-                                        <i class="fa-solid fa-right-from-bracket"></i> Salir
-                                    </button>
-                                </div>
-
-                                <div class="text-center py-5 bg-slate-950/70 rounded-2xl border border-slate-800 space-y-1 shadow-inner">
-                                    <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tiempo Trabajado Hoy</p>
-                                    <div id="tabletTimerDisplay" class="font-mono text-4xl sm:text-6xl font-black text-teal-400 tracking-tight">00:00:00</div>
-                                </div>
-
-                                <div class="grid grid-cols-2 gap-3">
-                                    <button id="btnTabletClockIn" onclick="handleEmpClockIn()" class="py-4 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black text-lg shadow-lg flex items-center justify-center gap-2 touch-action-manipulation">
-                                        <i class="fa-solid fa-play"></i> ENTRADA
-                                    </button>
-                                    <button id="btnTabletClockOut" onclick="triggerEmpClockOutModal()" disabled class="py-4 px-4 rounded-2xl bg-slate-700 opacity-50 cursor-not-allowed text-white font-black text-lg flex items-center justify-center gap-2 touch-action-manipulation">
-                                        <i class="fa-solid fa-stop"></i> SALIDA
-                                    </button>
-                                </div>
-
-                                <div class="bg-slate-900/90 p-4 rounded-2xl border border-slate-700/80 space-y-1">
-                                    <p class="text-[10px] uppercase font-bold text-slate-400">Total Confirmado Este Mes</p>
-                                    <p id="tabletEmpConfirmedHours" class="text-xl font-black text-white">0h 0m</p>
-                                    <div id="tabletEuroWrapper" class="pt-1 border-t border-slate-700/60 mt-1">
-                                        <p class="text-[10px] uppercase font-bold text-teal-400">Importe Acumulado (€)</p>
-                                        <p id="tabletEmpConfirmedPay" class="text-2xl font-black text-teal-400">0,00 €</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- COLUMNA DERECHA: TAREAS Y CHAT PRIVADO -->
-                        <div class="lg:col-span-7 space-y-4">
-                            <div class="bg-slate-800 rounded-3xl p-5 border border-slate-700 shadow-xl space-y-3">
-                                <div class="flex items-center justify-between border-b border-slate-700 pb-2">
-                                    <h4 class="text-sm font-bold text-white flex items-center gap-2">
-                                        <i class="fa-solid fa-list-check text-teal-400"></i> Tareas de Hoy
-                                    </h4>
-                                    <span class="text-[11px] text-slate-400">Toca la casilla al completarla</span>
-                                </div>
-                                <div id="tabletTasksList" class="space-y-2 max-h-56 overflow-y-auto pr-1"></div>
-                            </div>
-
-                            <div class="bg-slate-800 rounded-3xl p-5 border border-slate-700 shadow-xl space-y-3">
-                                <div class="flex items-center justify-between border-b border-slate-700 pb-2">
-                                    <h4 class="text-sm font-bold text-white flex items-center gap-2">
-                                        <i class="fa-solid fa-comments text-teal-400"></i> Mensajes Privados con Propietarios
-                                    </h4>
-                                </div>
-                                <div id="tabletChatQuickBox" class="h-44 overflow-y-auto space-y-2 text-xs bg-slate-900/60 p-3 rounded-2xl border border-slate-700/70"></div>
-                                <form onsubmit="handleSendEmpChatMessage(event)" class="flex gap-2 pt-1">
-                                    <input type="text" id="tabletChatInput" placeholder="Escribe un mensaje..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500">
-                                    <button type="submit" class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5">
-                                        <i class="fa-solid fa-paper-plane"></i> Enviar
-                                    </button>
-                                </form>
-                            </div>
-                        </div>
-
-                    </div>
-                </div>
-
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Contraseña</label>
+              <input id="ownerPassInput" type="password" required placeholder="Introduce la contraseña" class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
 
+            ${ui.authError ? `<p class="text-xs text-red-600 font-medium">${ui.authError}</p>` : ''}
 
-            <!-- VISTA 3: MÓVIL EMPLEADA -->
-            <div id="viewEmployeeMobile" class="space-y-6 hidden max-w-md mx-auto">
-                <div class="bg-slate-800 rounded-3xl p-6 border border-slate-700 shadow-xl space-y-6">
-                    <div class="flex items-center justify-between border-b border-slate-700 pb-4">
-                        <div class="flex items-center space-x-3">
-                            <div id="mobEmpAvatar" class="w-12 h-12 rounded-2xl bg-teal-600 text-white font-bold text-xl flex items-center justify-center">W</div>
-                            <div>
-                                <h3 id="mobEmpName" class="font-bold text-lg text-white">Wendy</h3>
-                                <p class="text-xs text-slate-400">Móvil Vinculado</p>
-                            </div>
+            <div class="flex gap-2 pt-2">
+              <button type="button" onclick="goLanding()" class="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50">
+                Volver
+              </button>
+              <button type="submit" class="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">
+                Entrar
+              </button>
+            </div>
+          </form>
+        </div>
+      `;
+    }
+
+    function renderEmployeeSelect() {
+      return `
+        <div class="max-w-xl mx-auto w-full px-4 py-10 flex-1">
+          <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
+            <div class="flex items-center justify-between mb-6">
+              <div>
+                <h2 class="text-xl font-bold text-slate-900">Selecciona tu nombre</h2>
+                <p class="text-xs text-slate-500">Pulsa en tu perfil para introducir tu contraseña.</p>
+              </div>
+              <button onclick="goLanding()" class="text-xs font-semibold text-slate-600 hover:text-slate-900">← Atrás</button>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              ${appState.employees
+                .map((emp) => {
+                  const active = getActiveShift(emp.id);
+                  const hasUnread = ui.unreadChatForEmployee[emp.id];
+                  return `
+                    <button onclick="chooseEmployeeForAuth('${emp.id}')" class="p-4 rounded-xl border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/40 text-left transition flex items-center justify-between">
+                      <div>
+                        <div class="font-bold text-slate-900 text-base">${emp.name}</div>
+                        <div class="text-xs text-slate-500">Código: <span class="font-mono">${emp.name}</span></div>
+                        <div class="mt-1">
+                          ${
+                            active
+                              ? `<span class="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800">En jornada</span>`
+                              : `<span class="inline-block px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600">Fuera de turno</span>`
+                          }
                         </div>
-                        <div id="mobEmpStatusBadge" class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-700 text-slate-300">Fuera de servicio</div>
+                      </div>
+                      <div class="flex flex-col items-end gap-1">
+                        ${hasUnread ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-slate-950 chat-alert-glow">Chat</span>` : ''}
+                        <span class="text-emerald-700 font-bold text-lg">→</span>
+                      </div>
+                    </button>
+                  `;
+                })
+                .join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderEmployeeAuth() {
+      const emp = appState.employees.find((e) => e.id === ui.selectedEmployeeId);
+      if (!emp) return renderEmployeeSelect();
+
+      return `
+        <div class="max-w-md mx-auto w-full px-4 py-12 flex-1 flex items-center">
+          <form onsubmit="submitEmployeeAuth(event)" class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 w-full space-y-4">
+            <div>
+              <span class="text-xs font-semibold text-emerald-700 uppercase">Perfil de Empleado</span>
+              <h2 class="text-2xl font-bold text-slate-900">${emp.name}</h2>
+              <p class="text-xs text-slate-500">Código: <span class="font-mono">${emp.name}</span></p>
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Contraseña</label>
+              <input id="empPassInput" type="password" required placeholder="Tu contraseña" class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+            </div>
+
+            ${ui.authError ? `<p class="text-xs text-red-600 font-medium">${ui.authError}</p>` : ''}
+
+            <div class="flex gap-2 pt-2">
+              <button type="button" onclick="ui.view='emp_select'; ui.authError=''; render();" class="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50">
+                Cambiar nombre
+              </button>
+              <button type="submit" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">
+                Entrar
+              </button>
+            </div>
+          </form>
+        </div>
+      `;
+    }
+
+    function renderCalendarPanel(employeeId, isOwner) {
+      const emp = appState.employees.find((e) => e.id === employeeId);
+      if (!emp) return '';
+
+      const [yearStr, monthStr] = ui.calendarMonth.split('-');
+      const year = Number(yearStr);
+      const monthIndex = Number(monthStr) - 1;
+      const firstDay = new Date(year, monthIndex, 1);
+      const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+      const startWeekday = (firstDay.getDay() + 6) % 7; // Monday = 0
+      const summary = getMonthSummary(employeeId, ui.calendarMonth);
+
+      const cells = [];
+      for (let i = 0; i < startWeekday; i++) {
+        cells.push(`<div class="h-16 sm:h-20 rounded-lg bg-slate-50/60 border border-slate-100"></div>`);
+      }
+
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${yearStr}-${monthStr}-${String(day).padStart(2, '0')}`;
+        const dayShifts = appState.shifts.filter((s) => s.employeeId === employeeId && s.date === dateStr);
+        const isSelected = ui.selectedCalendarDate === dateStr;
+
+        let totalMins = 0;
+        let hasActive = false;
+        let hasPending = false;
+        let hasConfirmed = false;
+
+        dayShifts.forEach((s) => {
+          if (s.status === 'active') {
+            hasActive = true;
+            totalMins += Math.max(0, (Date.now() - s.startTime) / 60000);
+          } else if (s.status === 'pending') {
+            hasPending = true;
+            totalMins += Number(s.minutes || 0);
+          } else if (s.status === 'confirmed') {
+            hasConfirmed = true;
+            totalMins += Number(s.minutes || 0);
+          }
+        });
+
+        let stateBadge = '';
+        if (hasActive) {
+          stateBadge = `<span class="inline-block w-2 h-2 rounded-full bg-blue-500" title="En curso"></span>`;
+        } else if (hasPending) {
+          stateBadge = `<span class="inline-block w-2 h-2 rounded-full bg-amber-500" title="Pendiente de confirmar"></span>`;
+        } else if (hasConfirmed) {
+          stateBadge = `<span class="inline-block w-2 h-2 rounded-full bg-emerald-500" title="Confirmado"></span>`;
+        }
+
+        cells.push(`
+          <button onclick="selectCalendarDay('${dateStr}')" class="h-16 sm:h-20 rounded-lg border p-1.5 text-left flex flex-col justify-between transition ${
+            isSelected
+              ? 'border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-200'
+              : 'border-slate-200 bg-white hover:border-slate-300'
+          }">
+            <div class="flex items-center justify-between w-full">
+              <span class="text-xs font-bold ${isSelected ? 'text-indigo-800' : 'text-slate-700'}">${day}</span>
+              ${stateBadge}
+            </div>
+            <div class="text-[11px] font-semibold leading-tight ${totalMins > 0 ? 'text-slate-800' : 'text-slate-300'}">
+              ${totalMins > 0 ? formatDurationHM(totalMins) : '—'}
+            </div>
+          </button>
+        `);
+      }
+
+      const selectedDayShifts = appState.shifts.filter(
+        (s) => s.employeeId === employeeId && s.date === ui.selectedCalendarDate
+      );
+
+      return `
+        <div class="space-y-4">
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div class="flex items-center gap-2">
+                <button onclick="changeCalendarMonth(-1)" class="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-sm font-bold">‹</button>
+                <h3 class="text-base sm:text-lg font-bold text-slate-900 capitalize">
+                  ${new Date(year, monthIndex, 1).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}
+                </h3>
+                <button onclick="changeCalendarMonth(1)" class="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-sm font-bold">›</button>
+              </div>
+
+              <div class="flex items-center gap-3 text-xs">
+                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span> En curso</span>
+                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Pendiente</span>
+                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Confirmado</span>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-3 mb-5">
+              <div class="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                <div class="text-[11px] font-semibold text-emerald-800 uppercase">Horas confirmadas</div>
+                <div class="text-lg font-extrabold text-emerald-950 mt-0.5">${formatDurationHM(summary.confirmedMinutes)}</div>
+                <div class="text-sm font-bold text-emerald-700 mt-0.5">${summary.confirmedEuros.toFixed(2).replace('.', ',')} €</div>
+              </div>
+
+              <div class="p-3.5 rounded-xl bg-amber-50 border border-amber-200">
+                <div class="text-[11px] font-semibold text-amber-800 uppercase">Pendientes confirmar</div>
+                <div class="text-lg font-extrabold text-amber-950 mt-0.5">${formatDurationHM(summary.pendingMinutes)}</div>
+                <div class="text-xs font-semibold text-amber-700 mt-0.5">(${summary.pendingEuros.toFixed(2).replace('.', ',')} € sin sumar)</div>
+              </div>
+
+              <div class="p-3.5 rounded-xl bg-slate-900 text-white flex flex-col justify-between">
+                <div>
+                  <div class="text-[11px] font-semibold text-slate-300 uppercase">Cierre del mes</div>
+                  <div class="text-sm font-bold mt-1">
+                    ${summary.isClosed ? `<span class="text-emerald-400">✓ Cerrado (${summary.isClosed})</span>` : '<span class="text-amber-300">Abierto</span>'}
+                  </div>
+                </div>
+                ${
+                  isOwner
+                    ? `<button onclick="toggleCloseMonth('${employeeId}', '${ui.calendarMonth}')" class="mt-2 w-full py-1.5 rounded-lg text-xs font-bold ${
+                        summary.isClosed ? 'bg-slate-700 hover:bg-slate-600 text-white' : 'bg-indigo-500 hover:bg-indigo-400 text-white'
+                      }">
+                        ${summary.isClosed ? 'Reabrir mes' : 'Marcar cierre de mes'}
+                      </button>`
+                    : ''
+                }
+              </div>
+            </div>
+
+            <div class="grid grid-cols-7 gap-1.5 text-center text-[11px] font-bold text-slate-400 mb-1.5">
+              <div>LUN</div><div>MAR</div><div>MIÉ</div><div>JUE</div><div>VIE</div><div>SÁB</div><div>DOM</div>
+            </div>
+            <div class="grid grid-cols-7 gap-1.5">
+              ${cells.join('')}
+            </div>
+          </div>
+
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm">
+            <h4 class="font-bold text-slate-900 mb-3">Detalle del día: <span class="font-mono text-indigo-700">${ui.selectedCalendarDate}</span></h4>
+            ${
+              selectedDayShifts.length === 0
+                ? `<p class="text-sm text-slate-400">No hay turnos registrados en esta fecha.</p>`
+                : `<div class="space-y-2.5">
+                    ${selectedDayShifts
+                      .map((s) => {
+                        const mins =
+                          s.status === 'active'
+                            ? Math.max(0, (Date.now() - s.startTime) / 60000)
+                            : Number(s.minutes || 0);
+                        const euros = ((mins / 60) * Number(s.rate || 10)).toFixed(2).replace('.', ',');
+                        const badgeMap = {
+                          active: ['bg-blue-100 text-blue-800', 'En curso'],
+                          pending: ['bg-amber-100 text-amber-800', 'Pendiente confirmar'],
+                          confirmed: ['bg-emerald-100 text-emerald-800', 'Confirmado']
+                        };
+                        const [bClass, bLabel] = badgeMap[s.status] || ['bg-slate-100 text-slate-700', s.status];
+
+                        return `
+                          <div class="p-3 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <div class="flex items-center gap-2">
+                                <span class="text-sm font-bold text-slate-800">${formatTimeHHMM(s.startTime)} – ${s.endTime ? formatTimeHHMM(s.endTime) : 'Ahora'}</span>
+                                <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold ${bClass}">${bLabel}</span>
+                              </div>
+                              <div class="text-xs text-slate-500 mt-0.5">
+                                Tiempo: <strong>${formatDurationHM(mins)}</strong> · Tarifa: ${Number(s.rate || 10).toFixed(2).replace('.', ',')} €/h · Importe: <strong>${euros} €</strong>
+                              </div>
+                            </div>
+
+                            ${
+                              isOwner
+                                ? `<div class="flex items-center gap-2">
+                                    ${
+                                      s.status !== 'confirmed'
+                                        ? `<button onclick="confirmShift('${s.id}')" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">
+                                            Confirmar turno
+                                          </button>`
+                                        : ''
+                                    }
+                                    <button onclick="openAdjustShiftModal('${s.id}')" class="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold">
+                                      Ajustar / Editar
+                                    </button>
+                                  </div>`
+                                : ''
+                            }
+                          </div>
+                        `;
+                      })
+                      .join('')}
+                  </div>`
+            }
+          </div>
+        </div>
+      `;
+    }
+
+    function renderChatPanel(employeeId, senderName) {
+      const msgs = appState.messages.filter((m) => m.employeeId === employeeId);
+      return `
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[460px]">
+          <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+            <div>
+              <h3 class="font-bold text-slate-900 text-sm">Chat sincronizado</h3>
+              <p class="text-[11px] text-slate-500">Avisos automáticos de entrada/salida/confirmación y mensajes del grupo</p>
+            </div>
+          </div>
+
+          <div id="chatMessagesBox" class="flex-1 overflow-y-auto p-4 space-y-2.5 bg-slate-50/60">
+            ${
+              msgs.length === 0
+                ? `<p class="text-center text-xs text-slate-400 py-8">Aún no hay mensajes en este chat.</p>`
+                : msgs
+                    .map((m) => {
+                      if (m.isSystem) {
+                        return `
+                          <div class="text-center">
+                            <span class="inline-block px-3 py-1 rounded-full bg-slate-200/80 text-slate-700 text-xs font-medium">
+                              ${m.text} <span class="text-[10px] text-slate-500 ml-1">${formatTimeHHMM(m.timestamp)}</span>
+                            </span>
+                          </div>
+                        `;
+                      }
+                      const isMine = m.sender === senderName;
+                      return `
+                        <div class="flex flex-col ${isMine ? 'items-end' : 'items-start'}">
+                          <span class="text-[10px] font-semibold text-slate-500 px-1 mb-0.5">${m.sender} · ${formatTimeHHMM(m.timestamp)}</span>
+                          <div class="max-w-[82%] px-3.5 py-2 rounded-2xl text-sm ${
+                            isMine
+                              ? 'bg-indigo-600 text-white rounded-br-sm'
+                              : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'
+                          }">
+                            ${m.text}
+                          </div>
+                        </div>
+                      `;
+                    })
+                    .join('')
+            }
+          </div>
+
+          <form onsubmit="submitChatMessage(event, '${employeeId}', '${senderName}')" class="p-3 border-t border-slate-200 flex gap-2 bg-white rounded-b-2xl">
+            <input id="chatInputField" type="text" required placeholder="Escribe un mensaje..." class="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <button type="submit" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">
+              Enviar
+            </button>
+          </form>
+        </div>
+      `;
+    }
+
+    function renderEmployeeSpace() {
+      const emp = appState.employees.find((e) => e.id === ui.selectedEmployeeId) || appState.employees[0];
+      if (!emp) return renderEmployeeSelect();
+      ui.selectedEmployeeId = emp.id;
+
+      const activeShift = getActiveShift(emp.id);
+      const today = getTodayISO();
+      const todayTasks = appState.tasks.filter((t) => t.employeeId === emp.id && t.date === today);
+      const todayShifts = appState.shifts.filter((s) => s.employeeId === emp.id && s.date === today);
+      const hasUnreadChat = Boolean(ui.unreadChatForEmployee[emp.id]);
+
+      const priorityBadge = {
+        alta: 'bg-red-100 text-red-700 border-red-200',
+        media: 'bg-amber-100 text-amber-800 border-amber-200',
+        baja: 'bg-slate-100 text-slate-600 border-slate-200'
+      };
+
+      return `
+        <div class="max-w-5xl mx-auto w-full px-4 py-5 flex-1">
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div>
+              <span class="text-xs font-semibold text-emerald-700">Espacio de Empleado</span>
+              <h1 class="text-2xl font-extrabold text-slate-900">${emp.name}</h1>
+            </div>
+
+            <div class="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+              <button onclick="setEmployeeTab('home')" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+                ui.employeeTab === 'home' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+              }">
+                Fichar y Tareas
+              </button>
+              <button onclick="setEmployeeTab('calendar')" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+                ui.employeeTab === 'calendar' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+              }">
+                Calendario
+              </button>
+              <button onclick="setEmployeeTab('chat')" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition relative ${
+                ui.employeeTab === 'chat'
+                  ? 'bg-emerald-600 text-white'
+                  : hasUnreadChat
+                  ? 'bg-amber-300 text-slate-950 chat-alert-glow'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }">
+                Chat ${hasUnreadChat ? '●' : ''}
+              </button>
+            </div>
+          </div>
+
+          ${
+            ui.employeeTab === 'home'
+              ? `
+                <div class="employee-main-grid space-y-5 landscape:space-y-0">
+                  <!-- IZQUIERDA (en apaisado / tablet): CRONO Y FICHAJE -->
+                  <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Control de jornada</span>
+                      <span class="text-xs font-semibold text-slate-500">Hoy · ${today}</span>
                     </div>
 
-                    <div class="text-center py-6 bg-slate-950/60 rounded-2xl border border-slate-800 space-y-1">
-                        <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tiempo de Hoy</p>
-                        <div id="mobTimerDisplay" class="font-mono text-4xl font-black text-teal-400">00:00:00</div>
+                    <div class="p-4 rounded-2xl bg-slate-900 text-white text-center">
+                      <div class="text-xs text-slate-400 mb-1">
+                        ${activeShift ? `Entrada a las ${formatTimeHHMM(activeShift.startTime)}` : 'Sin entrada activa'}
+                      </div>
+                      <div id="liveChronoDisplay" class="text-3xl sm:text-4xl font-mono font-extrabold tracking-tight text-emerald-400">
+                        ${activeShift ? formatDurationHMS(Date.now() - activeShift.startTime) : '00:00:00'}
+                      </div>
+                      <div id="liveChronoHM" class="text-xs font-semibold text-slate-300 mt-1">
+                        ${activeShift ? formatDurationHM((Date.now() - activeShift.startTime) / 60000) : '0h 00m'}
+                      </div>
                     </div>
 
                     <div class="grid grid-cols-2 gap-3">
-                        <button id="btnMobClockIn" onclick="handleEmpClockIn()" class="py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-base shadow-lg">ENTRADA</button>
-                        <button id="btnMobClockOut" onclick="triggerEmpClockOutModal()" disabled class="py-4 rounded-2xl bg-slate-700 opacity-50 text-white font-bold text-base">SALIDA</button>
+                      <button
+                        onclick="clockIn('${emp.id}')"
+                        ${activeShift ? 'disabled' : ''}
+                        class="py-3.5 px-4 rounded-xl font-bold text-sm transition ${
+                          activeShift
+                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                            : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow'
+                        }"
+                      >
+                        Fichar Entrada
+                      </button>
+
+                      <button
+                        onclick="requestClockOutConfirm('${activeShift ? activeShift.id : ''}')"
+                        ${!activeShift ? 'disabled' : ''}
+                        class="py-3.5 px-4 rounded-xl font-bold text-sm transition ${
+                          !activeShift
+                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                            : 'bg-rose-600 hover:bg-rose-700 text-white shadow'
+                        }"
+                      >
+                        Fichar Salida
+                      </button>
                     </div>
 
-                    <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-700/80 space-y-1">
-                        <p class="text-[10px] font-bold uppercase text-slate-400">Total Confirmado Este Mes</p>
-                        <p id="mobEmpConfirmedHours" class="text-lg font-bold text-white">0h 0m</p>
-                        <div id="mobEuroWrapper" class="pt-1 border-t border-slate-700/60 mt-1">
-                            <p id="mobEmpConfirmedPay" class="text-xl font-black text-teal-400">0,00 €</p>
-                        </div>
+                    <div class="pt-2 border-t border-slate-100">
+                      <div class="text-xs font-bold text-slate-600 mb-2">Turnos de hoy</div>
+                      ${
+                        todayShifts.length === 0
+                          ? `<p class="text-xs text-slate-400">Aún no has fichado hoy.</p>`
+                          : `<div class="space-y-1.5">
+                              ${todayShifts
+                                .map((s) => {
+                                  const m =
+                                    s.status === 'active'
+                                      ? Math.max(0, (Date.now() - s.startTime) / 60000)
+                                      : Number(s.minutes || 0);
+                                  const statusTxt =
+                                    s.status === 'active'
+                                      ? 'En curso'
+                                      : s.status === 'confirmed'
+                                      ? 'Confirmado'
+                                      : 'Pendiente confirmar';
+                                  return `
+                                    <div class="flex items-center justify-between text-xs bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
+                                      <span>${formatTimeHHMM(s.startTime)} – ${s.endTime ? formatTimeHHMM(s.endTime) : '...'} (<strong>${formatDurationHM(m)}</strong>)</span>
+                                      <span class="font-semibold text-slate-600">${statusTxt}</span>
+                                    </div>
+                                  `;
+                                })
+                                .join('')}
+                            </div>`
+                      }
                     </div>
+                  </div>
+
+                  <!-- DERECHA (en apaisado / tablet): TAREAS ESPECIALES DEL DÍA -->
+                  <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                    <div class="flex items-center justify-between mb-3">
+                      <div>
+                        <h2 class="text-base font-bold text-slate-900">Tareas especiales de hoy</h2>
+                        <p class="text-xs text-slate-500">Marca opcionalmente las tareas que vayas completando.</p>
+                      </div>
+                      <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700">
+                        ${todayTasks.filter((t) => t.completed).length}/${todayTasks.length}
+                      </span>
+                    </div>
+
+                    ${
+                      todayTasks.length === 0
+                        ? `<div class="p-6 text-center rounded-xl bg-slate-50 border border-dashed border-slate-200 text-xs text-slate-400">
+                            No hay tareas especiales asignadas para hoy.
+                          </div>`
+                        : `<div class="space-y-2.5">
+                            ${todayTasks
+                              .map((t) => {
+                                const pCls = priorityBadge[t.priority] || priorityBadge.media;
+                                return `
+                                  <label class="flex items-start gap-3 p-3 rounded-xl border ${
+                                    t.completed ? 'bg-slate-50 border-slate-200 opacity-75' : 'bg-white border-slate-200 hover:border-indigo-300'
+                                  } cursor-pointer transition">
+                                    <input type="checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTask('${t.id}')" class="mt-1 w-4 h-4 rounded accent-emerald-600 cursor-pointer" />
+                                    <div class="flex-1 min-w-0">
+                                      <div class="flex items-center justify-between gap-2">
+                                        <span class="text-sm font-semibold ${t.completed ? 'line-through text-slate-400' : 'text-slate-800'}">${t.title}</span>
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${pCls}">${t.priority}</span>
+                                      </div>
+                                    </div>
+                                  </label>
+                                `;
+                              })
+                              .join('')}
+                          </div>`
+                    }
+                  </div>
                 </div>
-
-                <div class="space-y-4">
-                    <div class="bg-slate-800 rounded-3xl p-5 border border-slate-700 shadow-lg space-y-3">
-                        <h4 class="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-700 pb-2">
-                            <i class="fa-solid fa-list-check text-teal-400"></i> Tareas de Hoy
-                        </h4>
-                        <div id="mobTasksList" class="space-y-2"></div>
-                    </div>
-
-                    <div class="bg-slate-800 rounded-3xl p-5 border border-slate-700 shadow-lg space-y-3">
-                        <h4 class="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-700 pb-2">
-                            <i class="fa-solid fa-comments text-teal-400"></i> Mensajes Privados
-                        </h4>
-                        <div id="mobChatBox" class="h-40 overflow-y-auto space-y-2 text-xs bg-slate-900/60 p-3 rounded-2xl border border-slate-700"></div>
-                        <form onsubmit="handleSendEmpChatMessage(event)" class="flex gap-2">
-                            <input type="text" id="mobChatInput" placeholder="Escribe un mensaje..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none">
-                            <button type="submit" class="px-3 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs">
-                                <i class="fa-solid fa-paper-plane"></i>
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            </div>
-
-        </main>
-    </div>
-
-
-    <!-- MODALES DE LA APLICACIÓN -->
-
-    <!-- MODAL: CONTRASEÑA EMPLEADA EN TABLET -->
-    <div id="modalTabletAuthPassword" class="fixed inset-0 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-center">
-            <div id="tabletAuthAvatar" class="w-16 h-16 bg-teal-600 text-white font-black text-2xl rounded-2xl flex items-center justify-center mx-auto shadow-lg">W</div>
-            <div>
-                <h3 id="tabletAuthEmpName" class="text-xl font-bold text-white">Wendy</h3>
-                <p class="text-xs text-slate-400 mt-1">Introduce tu contraseña para acceder</p>
-                <p class="text-[11px] text-teal-400/80 italic mt-0.5">(Por defecto: tu nombre)</p>
-            </div>
-            <form onsubmit="handleTabletPasswordSubmit(event)" class="space-y-4">
-                <input type="password" id="tabletPasswordInput" placeholder="Contraseña..." required class="w-full text-center text-lg font-bold bg-slate-950 border border-slate-700 rounded-2xl py-3 text-white outline-none focus:border-teal-500">
-                <div id="tabletPasswordError" class="text-xs text-rose-400 font-bold hidden">Contraseña incorrecta</div>
-                <div class="flex gap-2">
-                    <button type="button" onclick="closeTabletPasswordModal()" class="flex-1 py-3 bg-slate-800 text-slate-300 rounded-xl text-xs font-bold">Cancelar</button>
-                    <button type="submit" class="flex-1 py-3 bg-teal-600 hover:bg-teal-500 text-white font-black rounded-xl text-xs">Acceder</button>
-                </div>
-            </form>
+              `
+              : ui.employeeTab === 'calendar'
+              ? renderCalendarPanel(emp.id, false)
+              : renderChatPanel(emp.id, emp.name)
+          }
         </div>
-    </div>
+      `;
+    }
 
-    <!-- MODAL: SELECTOR DE ROL -->
-    <div id="modalRoleSelector" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
-            <div class="text-center space-y-1">
-                <div class="w-12 h-12 bg-teal-500/20 text-teal-400 rounded-2xl flex items-center justify-center mx-auto text-xl border border-teal-500/30">
-                    <i class="fa-solid fa-sliders"></i>
-                </div>
-                <h3 class="text-lg font-bold text-white">Seleccionar Rol de este Dispositivo</h3>
-                <p class="text-xs text-slate-400">Elige cómo operará esta pantalla</p>
+    function renderOwnerDashboard() {
+      const emp = appState.employees.find((e) => e.id === ui.selectedEmployeeId) || appState.employees[0];
+      if (emp) ui.selectedEmployeeId = emp.id;
+
+      const pendingShifts = appState.shifts.filter((s) => s.status === 'pending');
+      const overtimeAlerts = getOvertimeAlerts();
+      const today = getTodayISO();
+
+      return `
+        <div class="max-w-6xl mx-auto w-full px-4 py-5 flex-1 space-y-5">
+          ${
+            overtimeAlerts.length > 0
+              ? `<div class="p-4 rounded-2xl bg-red-50 border-2 border-red-300 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div class="text-sm font-extrabold text-red-800">⚠️ Alerta de posible olvido de salida (+1h sobre jornada)</div>
+                    <p class="text-xs text-red-700 mt-0.5">
+                      ${overtimeAlerts
+                        .map((a) => `${a.employee.name} lleva ${formatDurationHM(a.workedMinutes)} (límite ${a.allowedHours}h + 1h)`)
+                        .join(' · ')}
+                    </p>
+                  </div>
+                  <button onclick="openOvertimeModal('${overtimeAlerts[0].shift.id}')" class="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold">
+                    Cerrar y ajustar hora real
+                  </button>
+                </div>`
+              : ''
+          }
+
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm flex flex-wrap items-center justify-between gap-4">
+            <div class="flex flex-wrap items-center gap-3">
+              <div>
+                <span class="text-[11px] font-bold uppercase text-indigo-600">${ui.ownerLabel}</span>
+                <h1 class="text-xl font-extrabold text-slate-900">Panel de Gestión del Hogar</h1>
+              </div>
+
+              ${
+                appState.employees.length > 0
+                  ? `<div class="flex items-center gap-2 ml-0 sm:ml-4">
+                      <label class="text-xs font-semibold text-slate-500">Empleada:</label>
+                      <select onchange="changeSelectedEmployee(this.value)" class="rounded-xl border border-slate-300 px-3 py-1.5 text-sm font-semibold bg-slate-50">
+                        ${appState.employees
+                          .map(
+                            (e) =>
+                              `<option value="${e.id}" ${e.id === ui.selectedEmployeeId ? 'selected' : ''}>${e.name} (${getRateForDate(e, today).toFixed(2).replace('.', ',')} €/h)</option>`
+                          )
+                          .join('')}
+                      </select>
+                    </div>`
+                  : ''
+              }
             </div>
-            <div class="space-y-3">
-                <button onclick="selectAppRole('OWNER')" class="w-full p-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-left transition-all flex items-center justify-between group">
-                    <div class="flex items-center space-x-3">
-                        <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-lg">
-                            <i class="fa-solid fa-user-shield"></i>
-                        </div>
-                        <div>
-                            <h4 class="font-bold text-sm text-white">Propietarios (Tú y tu mujer)</h4>
-                            <p class="text-xs text-slate-400">Validar fichajes, nómina y asignar tareas (PIN 1234)</p>
-                        </div>
+
+            <div class="flex items-center gap-1.5 flex-wrap bg-slate-100 p-1 rounded-xl">
+              <button onclick="setOwnerTab('overview')" class="px-3 py-1.5 rounded-lg text-xs font-bold ${
+                ui.ownerTab === 'overview' ? 'bg-indigo-600 text-white' : 'text-slate-700 hover:bg-white'
+              }">
+                Confirmaciones (${pendingShifts.length})
+              </button>
+              <button onclick="setOwnerTab('employees')" class="px-3 py-1.5 rounded-lg text-xs font-bold ${
+                ui.ownerTab === 'employees' ? 'bg-indigo-600 text-white' : 'text-slate-700 hover:bg-white'
+              }">
+                Empleadas
+              </button>
+              <button onclick="setOwnerTab('tasks')" class="px-3 py-1.5 rounded-lg text-xs font-bold ${
+                ui.ownerTab === 'tasks' ? 'bg-indigo-600 text-white' : 'text-slate-700 hover:bg-white'
+              }">
+                Tareas especiales
+              </button>
+              <button onclick="setOwnerTab('calendar')" class="px-3 py-1.5 rounded-lg text-xs font-bold ${
+                ui.ownerTab === 'calendar' ? 'bg-indigo-600 text-white' : 'text-slate-700 hover:bg-white'
+              }">
+                Calendario y €
+              </button>
+              <button onclick="setOwnerTab('chat')" class="px-3 py-1.5 rounded-lg text-xs font-bold ${
+                ui.ownerTab === 'chat'
+                  ? 'bg-indigo-600 text-white'
+                  : emp && ui.unreadChatForEmployee[emp.id]
+                  ? 'bg-amber-300 text-slate-950 chat-alert-glow'
+                  : 'text-slate-700 hover:bg-white'
+              }">
+                Chat ${emp && ui.unreadChatForEmployee[emp.id] ? '●' : ''}
+              </button>
+            </div>
+          </div>
+
+          ${
+            ui.ownerTab === 'overview'
+              ? `
+                <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <h2 class="text-base font-bold text-slate-900">Turnos pendientes de confirmar</h2>
+                      <p class="text-xs text-slate-500">Los turnos solo suman al total mensual de horas y euros cuando los confirmas aquí.</p>
                     </div>
-                    <i class="fa-solid fa-chevron-right text-slate-500 group-hover:text-white text-xs"></i>
+                  </div>
+
+                  ${
+                    pendingShifts.length === 0
+                      ? `<div class="p-8 text-center rounded-xl bg-slate-50 text-sm text-slate-400">
+                          No hay turnos pendientes de confirmar ahora mismo.
+                        </div>`
+                      : `<div class="space-y-3">
+                          ${pendingShifts
+                            .map((s) => {
+                              const e = appState.employees.find((x) => x.id === s.employeeId);
+                              const mins = Number(s.minutes || 0);
+                              const euros = ((mins / 60) * Number(s.rate || 10)).toFixed(2).replace('.', ',');
+                              return `
+                                <div class="p-4 rounded-xl border border-amber-200 bg-amber-50/40 flex flex-wrap items-center justify-between gap-3">
+                                  <div>
+                                    <div class="font-bold text-slate-900">${e ? e.name : 'Empleada'} · <span class="font-mono text-xs">${s.date}</span></div>
+                                    <div class="text-xs text-slate-600 mt-0.5">
+                                      Entrada ${formatTimeHHMM(s.startTime)} — Salida ${formatTimeHHMM(s.endTime)} · Duración: <strong>${formatDurationHM(mins)}</strong> · Importe: <strong>${euros} €</strong>
+                                    </div>
+                                  </div>
+                                  <div class="flex items-center gap-2">
+                                    <button onclick="confirmShift('${s.id}')" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow">
+                                      Confirmar trabajo
+                                    </button>
+                                    <button onclick="openAdjustShiftModal('${s.id}')" class="px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold">
+                                      Ajustar hora
+                                    </button>
+                                  </div>
+                                </div>
+                              `;
+                            })
+                            .join('')}
+                        </div>`
+                  }
+                </div>
+              `
+              : ui.ownerTab === 'employees'
+              ? `
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  <form onsubmit="createEmployee(event)" class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3.5">
+                    <h2 class="text-base font-bold text-slate-900">Crear nueva empleada</h2>
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-700 mb-1">Nombre (código por defecto)</label>
+                      <input id="newEmpName" type="text" required placeholder="Ej. Lucía" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-700 mb-1">Contraseña para entrar</label>
+                      <input id="newEmpPass" type="text" required placeholder="Contraseña de acceso" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                      <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Tarifa por hora (€)</label>
+                        <input id="newEmpRate" type="number" step="0.01" min="0" value="10" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+                      </div>
+                      <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Horas diarias</label>
+                        <input id="newEmpHours" type="number" step="0.5" min="0.5" value="6" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+                      </div>
+                    </div>
+                    <button type="submit" class="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold">
+                      Añadir empleada
+                    </button>
+                  </form>
+
+                  <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3">
+                    <h2 class="text-base font-bold text-slate-900">Empleadas registradas</h2>
+                    ${appState.employees
+                      .map((e) => {
+                        const currentRate = getRateForDate(e, today);
+                        return `
+                          <div class="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
+                            <div>
+                              <div class="font-bold text-slate-900">${e.name} <span class="text-xs font-mono text-slate-400">(${e.name})</span></div>
+                              <div class="text-xs text-slate-500">
+                                Tarifa actual: <strong>${currentRate.toFixed(2).replace('.', ',')} €/h</strong> · Jornada ref.: <strong>${e.dailyHours}h</strong>
+                              </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                              <button onclick="openEditEmployeeModal('${e.id}')" class="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-xs font-semibold">
+                                Modificar / Tarifa
+                              </button>
+                              ${
+                                appState.employees.length > 1
+                                  ? `<button onclick="deleteEmployee('${e.id}')" class="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold">
+                                      Eliminar
+                                    </button>`
+                                  : ''
+                              }
+                            </div>
+                          </div>
+                        `;
+                      })
+                      .join('')}
+                  </div>
+                </div>
+              `
+              : ui.ownerTab === 'tasks'
+              ? `
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  <form onsubmit="addSpecialTask(event)" class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3.5">
+                    <h2 class="text-base font-bold text-slate-900">Asignar tarea especial para ${emp ? emp.name : ''}</h2>
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-700 mb-1">Fecha</label>
+                      <input id="taskDateInput" type="date" value="${today}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-700 mb-1">Tarea especial</label>
+                      <input id="taskTitleInput" type="text" required placeholder="Ej. Limpiar horno y campana" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-700 mb-1">Prioridad</label>
+                      <select id="taskPriorityInput" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
+                        <option value="alta">Alta (prioritaria)</option>
+                        <option value="media" selected>Media</option>
+                        <option value="baja">Baja</option>
+                      </select>
+                    </div>
+                    <button type="submit" class="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold">
+                      Guardar tarea
+                    </button>
+                  </form>
+
+                  <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2.5">
+                    <h2 class="text-base font-bold text-slate-900">Tareas de ${emp ? emp.name : ''}</h2>
+                    ${
+                      emp
+                        ? appState.tasks
+                            .filter((t) => t.employeeId === emp.id)
+                            .sort((a, b) => b.date.localeCompare(a.date))
+                            .map(
+                              (t) => `
+                              <div class="p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
+                                <div>
+                                  <div class="text-xs font-mono text-slate-500">${t.date} · <span class="uppercase font-bold">${t.priority}</span></div>
+                                  <div class="text-sm font-semibold ${t.completed ? 'line-through text-slate-400' : 'text-slate-800'}">${t.title}</div>
+                                </div>
+                                <button onclick="deleteTask('${t.id}')" class="px-2.5 py-1 rounded-lg text-xs text-red-600 hover:bg-red-50 font-semibold">
+                                  Quitar
+                                </button>
+                              </div>
+                            `
+                            )
+                            .join('') || `<p class="text-xs text-slate-400">Sin tareas registradas.</p>`
+                        : ''
+                    }
+                  </div>
+                </div>
+              `
+              : ui.ownerTab === 'calendar'
+              ? emp
+                ? renderCalendarPanel(emp.id, true)
+                : ''
+              : emp
+              ? renderChatPanel(emp.id, ui.ownerLabel)
+              : ''
+          }
+        </div>
+      `;
+    }
+
+    function renderModal() {
+      if (!ui.modal) return '';
+
+      if (ui.modal.type === 'confirm_checkout') {
+        const shift = appState.shifts.find((s) => s.id === ui.modal.shiftId);
+        if (!shift) return '';
+        const elapsed = formatDurationHM((Date.now() - shift.startTime) / 60000);
+        return `
+          <div class="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+              <h3 class="text-lg font-extrabold text-slate-900">¿Confirmar fichar salida?</h3>
+              <p class="text-sm text-slate-600">
+                Se detendrá el contador actual (<strong>${elapsed}</strong>) y se enviará el aviso de salida al chat.
+              </p>
+              <div class="flex gap-2 pt-2">
+                <button onclick="closeModal()" class="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold">
+                  Cancelar
                 </button>
-                <button onclick="selectAppRole('TABLET')" class="w-full p-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-left transition-all flex items-center justify-between group">
-                    <div class="flex items-center space-x-3">
-                        <div class="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center text-lg">
-                            <i class="fa-solid fa-tablet-screen-button"></i>
-                        </div>
-                        <div>
-                            <h4 class="font-bold text-sm text-white">Tablet Cocina (Modo Apaisado)</h4>
-                            <p class="text-xs text-slate-400">Pantalla fija de pared con clave de empleada</p>
-                        </div>
-                    </div>
-                    <i class="fa-solid fa-chevron-right text-slate-500 group-hover:text-white text-xs"></i>
+                <button onclick="executeClockOut('${shift.id}')" class="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold">
+                  Sí, fichar salida
                 </button>
-                <button onclick="selectAppRole('EMPLOYEE_MOBILE')" class="w-full p-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-left transition-all flex items-center justify-between group">
-                    <div class="flex items-center space-x-3">
-                        <div class="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-lg">
-                            <i class="fa-solid fa-mobile-screen-button"></i>
-                        </div>
-                        <div>
-                            <h4 class="font-bold text-sm text-white">Móvil Empleada Directo</h4>
-                            <p class="text-xs text-slate-400">Entrada directa al perfil personal</p>
-                        </div>
-                    </div>
-                    <i class="fa-solid fa-chevron-right text-slate-500 group-hover:text-white text-xs"></i>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      if (ui.modal.type === 'adjust_shift') {
+        const shift = appState.shifts.find((s) => s.id === ui.modal.shiftId);
+        if (!shift) return '';
+        const startDateObj = new Date(shift.startTime);
+        const endDateObj = new Date(shift.endTime || Date.now());
+        const pad = (n) => String(n).padStart(2, '0');
+        const toLocalInput = (d) =>
+          `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+
+        return `
+          <div class="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+            <form onsubmit="submitAdjustShift(event, '${shift.id}')" class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+              <h3 class="text-lg font-extrabold text-slate-900">Ajustar turno y confirmar</h3>
+              <p class="text-xs text-slate-500">Corrige la hora real de entrada o salida y confirma para sumar al cálculo mensual.</p>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Hora de entrada</label>
+                <input id="adjStartInput" type="datetime-local" value="${toLocalInput(startDateObj)}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Hora real de salida</label>
+                <input id="adjEndInput" type="datetime-local" value="${toLocalInput(endDateObj)}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+              </div>
+
+              <div class="flex gap-2 pt-2">
+                <button type="button" onclick="closeModal()" class="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold">
+                  Cancelar
                 </button>
-            </div>
-            <button onclick="closeRoleSelectorModal()" class="w-full py-2.5 bg-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-bold">Cancelar</button>
-        </div>
-    </div>
-
-    <!-- MODAL: PIN PROPIETARIO -->
-    <div id="modalPinAuth" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
-            <div class="w-12 h-12 bg-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center mx-auto text-xl border border-amber-500/30">
-                <i class="fa-solid fa-lock"></i>
-            </div>
-            <div class="text-center">
-                <h3 class="text-lg font-bold text-white">Acceso Propietarios</h3>
-                <p class="text-xs text-slate-400">Introduce la contraseña PIN (por defecto 1234)</p>
-            </div>
-            <form onsubmit="handlePinSubmit(event)" class="space-y-4">
-                <input type="password" id="pinAuthInput" placeholder="PIN (ej. 1234)" required class="w-full text-center tracking-widest text-xl font-bold bg-slate-950 border border-slate-700 rounded-2xl py-3 text-white outline-none focus:border-amber-500">
-                <div id="pinAuthError" class="text-xs text-rose-400 text-center hidden font-bold">PIN incorrecto</div>
-                <div class="flex gap-2">
-                    <button type="button" onclick="closePinModal()" class="flex-1 py-2.5 bg-slate-800 text-slate-300 rounded-xl text-xs font-bold">Cancelar</button>
-                    <button type="submit" class="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs">Acceder</button>
-                </div>
+                <button type="submit" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold">
+                  Guardar y confirmar
+                </button>
+              </div>
             </form>
-        </div>
-    </div>
+          </div>
+        `;
+      }
 
-    <!-- MODAL: CONFIRMAR SALIDA -->
-    <div id="modalClockOutConfirm" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-5 text-center">
-            <div class="w-14 h-14 bg-rose-500/20 text-rose-400 rounded-2xl flex items-center justify-center mx-auto text-2xl border border-rose-500/30">
-                <i class="fa-solid fa-person-walking-arrow-right"></i>
-            </div>
-            <div>
-                <h3 class="text-xl font-black text-white">¿Confirmar Salida?</h3>
-                <p class="text-xs text-slate-300 mt-1">¿Deseas cerrar el turno de hoy y enviar el aviso a los propietarios?</p>
-            </div>
-            <div class="grid grid-cols-2 gap-3 pt-2">
-                <button onclick="closeClockOutModal()" class="py-3.5 bg-slate-800 text-slate-300 font-bold rounded-2xl text-xs">Seguir Trabajando</button>
-                <button onclick="confirmEmpClockOut()" class="py-3.5 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-2xl text-xs shadow-lg">Fichar Salida</button>
-            </div>
-        </div>
-    </div>
+      if (ui.modal.type === 'edit_employee') {
+        const emp = appState.employees.find((e) => e.id === ui.modal.empId);
+        if (!emp) return '';
+        const today = getTodayISO();
+        const currentRate = getRateForDate(emp, today);
 
-    <!-- MODAL: AJUSTAR JORNADA -->
-    <div id="modalAdjustShift" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-                <h3 class="text-base font-bold text-white">Ajustar Jornada</h3>
-                <button onclick="closeAdjustShiftModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <form onsubmit="handleSaveAdjustedShift(event)" class="space-y-4">
-                <input type="hidden" id="adjustShiftId">
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="text-xs font-bold text-slate-400 block mb-1">Hora Entrada</label>
-                        <input type="time" id="adjustInTime" required class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-sm text-white font-mono">
-                    </div>
-                    <div>
-                        <label class="text-xs font-bold text-slate-400 block mb-1">Hora Salida</label>
-                        <input type="time" id="adjustOutTime" required class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-sm text-white font-mono">
-                    </div>
+        return `
+          <div class="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+            <form onsubmit="submitEditEmployee(event, '${emp.id}')" class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-3.5">
+              <h3 class="text-lg font-extrabold text-slate-900">Editar empleada</h3>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Nombre</label>
+                <input id="editEmpName" type="text" value="${emp.name}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Contraseña</label>
+                <input id="editEmpPass" type="text" value="${emp.password}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Horas diarias de referencia</label>
+                <input id="editEmpHours" type="number" step="0.5" min="0.5" value="${emp.dailyHours}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+              </div>
+
+              <div class="p-3 rounded-xl bg-indigo-50/70 border border-indigo-100 space-y-2.5">
+                <div class="text-xs font-bold text-indigo-900">Cambio de tarifa por hora</div>
+                <div class="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label class="block text-[11px] font-semibold text-slate-700 mb-1">Nueva tarifa (€/h)</label>
+                    <input id="editEmpRate" type="number" step="0.01" min="0" value="${currentRate}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-semibold text-slate-700 mb-1">Aplicar desde fecha</label>
+                    <input id="editEmpRateStart" type="date" value="${today}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
+                  </div>
                 </div>
-                <div>
-                    <label class="text-xs font-bold text-slate-400 block mb-1">Observaciones</label>
-                    <input type="text" id="adjustNotes" placeholder="Ej. Olvidó fichar..." class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white">
-                </div>
-                <div class="flex gap-2 pt-2">
-                    <button type="button" onclick="handleDeleteShift()" class="px-3 py-2.5 bg-rose-950 text-rose-300 border border-rose-800 rounded-xl text-xs font-bold hover:bg-rose-900"><i class="fa-solid fa-trash"></i></button>
-                    <button type="button" onclick="closeAdjustShiftModal()" class="flex-1 py-2.5 bg-slate-800 text-slate-300 rounded-xl text-xs font-bold">Cancelar</button>
-                    <button type="submit" class="flex-1 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs">Guardar & Validar</button>
-                </div>
+              </div>
+
+              <div class="flex gap-2 pt-2">
+                <button type="button" onclick="closeModal()" class="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold">
+                  Cancelar
+                </button>
+                <button type="submit" class="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold">
+                  Guardar cambios
+                </button>
+              </div>
             </form>
-        </div>
-    </div>
+          </div>
+        `;
+      }
 
-    <!-- MODAL: GESTIÓN DE EMPLEADAS -->
-    <div id="modalEmployeeManager" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
-            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-                <h3 class="text-base font-bold text-white flex items-center gap-2">
-                    <i class="fa-solid fa-users-gear text-teal-400"></i> Perfiles de Empleadas
-                </h3>
-                <button onclick="closeEmployeeManagerModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div id="managerEmpList" class="space-y-3 max-h-60 overflow-y-auto pr-1"></div>
-            <button onclick="openEmployeeFormModal(null)" class="w-full py-3 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2">
-                <i class="fa-solid fa-user-plus"></i> Añadir Nueva Empleada
-            </button>
-        </div>
-    </div>
+      if (ui.modal.type === 'cloud_modal') {
+        const empLink = getInviteLink('empleado');
+        const ownerLink = getInviteLink('propietario');
 
-    <!-- MODAL: CREAR/EDITAR EMPLEADA -->
-    <div id="modalEmployeeForm" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
-            <h3 id="empFormTitle" class="text-base font-bold text-white">Editar Empleada</h3>
-            <form onsubmit="handleSaveEmployee(event)" class="space-y-3 text-xs">
-                <input type="hidden" id="empFormId">
-                <div>
-                    <label class="font-bold text-slate-300 block mb-1">Nombre Completo</label>
-                    <input type="text" id="empFormName" required class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white">
+        return `
+          <div class="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
+            <form onsubmit="submitCloudConfig(event)" class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+              <div class="flex items-center justify-between">
+                <h3 class="text-lg font-extrabold text-slate-900">Enlace de hogar y sincronización en nube</h3>
+                <button type="button" onclick="closeModal()" class="text-slate-400 hover:text-slate-700 font-bold">✕</button>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Código de hogar compartido</label>
+                <input id="cloudCodeInput" type="text" value="${appState.householdCode}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-mono uppercase" />
+              </div>
+
+              <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+                <label class="flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer">
+                  <input id="cloudEnabledInput" type="checkbox" ${cloudConfig.enabled ? 'checked' : ''} class="w-4 h-4 accent-indigo-600" />
+                  Activar sincronización en nube (Firebase Realtime Database)
+                </label>
+                <input
+                  id="cloudUrlInput"
+                  type="url"
+                  value="${cloudConfig.firebaseDbUrl || ''}"
+                  placeholder="https://tu-proyecto-default-rtdb.europe-west1.firebasedatabase.app"
+                  class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-mono bg-white"
+                />
+                <p class="text-[11px] text-slate-500">
+                  Si se deja desactivado, funciona en local en este navegador. Con la URL de Firebase se sincroniza entre varios móviles.
+                </p>
+              </div>
+
+              <div class="space-y-2">
+                <div class="text-xs font-bold text-slate-700">Enlaces rápidos para otros dispositivos</div>
+                <div class="p-2.5 rounded-xl bg-indigo-50 border border-indigo-100">
+                  <div class="text-[11px] font-semibold text-indigo-900 mb-1">Enlace Propietario 2, 3...</div>
+                  <div class="flex items-center gap-2">
+                    <input type="text" readonly value="${ownerLink}" class="flex-1 text-[11px] font-mono bg-white border border-indigo-200 rounded-lg px-2 py-1.5" />
+                    <button type="button" onclick="copyText('${ownerLink}')" class="px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold">Copiar</button>
+                  </div>
                 </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="font-bold text-slate-300 block mb-1">Tarifa (€/hora)</label>
-                        <input type="number" step="0.25" min="0" id="empFormRate" required class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white">
-                    </div>
-                    <div>
-                        <label class="font-bold text-slate-300 block mb-1">Horas/día contrato</label>
-                        <input type="number" step="0.5" min="1" max="14" id="empFormContract" required class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white">
-                    </div>
+
+                <div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
+                  <div class="text-[11px] font-semibold text-emerald-900 mb-1">Enlace Empleado</div>
+                  <div class="flex items-center gap-2">
+                    <input type="text" readonly value="${empLink}" class="flex-1 text-[11px] font-mono bg-white border border-emerald-200 rounded-lg px-2 py-1.5" />
+                    <button type="button" onclick="copyText('${empLink}')" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold">Copiar</button>
+                  </div>
                 </div>
-                <div>
-                    <label class="font-bold text-teal-400 block mb-1">Contraseña Tablet (Por defecto: Nombre)</label>
-                    <input type="text" id="empFormPassword" required class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white">
-                </div>
-                <div class="flex gap-2 pt-2">
-                    <button type="button" onclick="closeEmployeeFormModal()" class="flex-1 py-2.5 bg-slate-800 text-slate-300 rounded-xl font-bold">Cancelar</button>
-                    <button type="submit" class="flex-1 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl shadow-md">Guardar</button>
-                </div>
+              </div>
+
+              <div class="flex gap-2 pt-2">
+                <button type="button" onclick="pullFromFirebase(false)" class="px-3 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold">
+                  Sincronizar ahora
+                </button>
+                <button type="submit" class="flex-1 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold">
+                  Guardar configuración
+                </button>
+              </div>
             </form>
-        </div>
-    </div>
+          </div>
+        `;
+      }
 
-    <!-- MODAL: AÑADIR TAREA ESPECIAL -->
-    <div id="modalAddTask" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
-            <h3 class="text-base font-bold text-white">Añadir Tarea Especial</h3>
-            <form onsubmit="handleSaveTask(event)" class="space-y-3 text-xs">
-                <div>
-                    <label class="font-bold text-slate-300 block mb-1">Descripción de la Tarea</label>
-                    <input type="text" id="taskFormTitle" required placeholder="Ej. Cambiar sábanas habitación invitados..." class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white">
-                </div>
-                <div>
-                    <label class="font-bold text-slate-300 block mb-1">Prioridad</label>
-                    <select id="taskFormPriority" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white">
-                        <option value="NORMAL">Normal</option>
-                        <option value="MEDIUM">Media</option>
-                        <option value="HIGH">Alta Prioridad</option>
-                    </select>
-                </div>
-                <div class="flex gap-2 pt-2">
-                    <button type="button" onclick="closeAddTaskModal()" class="flex-1 py-2.5 bg-slate-800 text-slate-300 rounded-xl font-bold">Cancelar</button>
-                    <button type="submit" class="flex-1 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl">Crear Tarea</button>
-                </div>
-            </form>
-        </div>
-    </div>
+      return '';
+    }
 
-    <!-- MODAL: AVISO GENÉRICO -->
-    <div id="modalNotice" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
-        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-center">
-            <div id="noticeIcon" class="w-12 h-12 bg-teal-500/20 text-teal-400 rounded-2xl flex items-center justify-center mx-auto text-xl border border-teal-500/30">
-                <i class="fa-solid fa-circle-info"></i>
-            </div>
-            <div>
-                <h3 id="noticeTitle" class="text-base font-bold text-white">Aviso</h3>
-                <p id="noticeMessage" class="text-xs text-slate-300 mt-1 whitespace-pre-line">Mensaje...</p>
-            </div>
-            <button onclick="closeNoticeModal()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs">Entendido</button>
-        </div>
-    </div>
+    function render() {
+      const root = document.getElementById('app');
+      let bodyHtml = '';
 
+      if (ui.view === 'landing') bodyHtml = renderLanding();
+      else if (ui.view === 'owner_auth') bodyHtml = renderOwnerAuth();
+      else if (ui.view === 'owner_dash') bodyHtml = renderOwnerDashboard();
+      else if (ui.view === 'emp_select') bodyHtml = renderEmployeeSelect();
+      else if (ui.view === 'emp_auth') bodyHtml = renderEmployeeAuth();
+      else if (ui.view === 'emp_space') bodyHtml = renderEmployeeSpace();
 
-    <!-- JAVASCRIPT COMPLETO SINO DEPENDENCIAS COMPLICADAS -->
-    <script>
-        // ESTADO GLOBAL DE LA APLICACIÓN
-        window.appState = {
-            role: localStorage.getItem('hc_role') || 'TABLET',
-            householdCode: (localStorage.getItem('hc_household_code') || 'HOGAR-2026').trim().toUpperCase(),
-            ownerPin: localStorage.getItem('hc_owner_pin') || '1234',
-            isOwnerAuthenticated: false,
-            showEuroToEmployee: localStorage.getItem('hc_show_euro') !== 'false',
-            selectedEmployeeId: null,
-            pendingTabletEmpId: null,
-            selectedOwnerTab: 'validation',
-            selectedMonth: new Date().getMonth(),
-            selectedYear: new Date().getFullYear(),
-            employees: [],
-            shifts: [],
-            tasks: [],
-            messages: [],
-            paidHistory: []
-        };
+      const toastHtml = ui.toast
+        ? `<div class="fixed bottom-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg text-xs font-bold text-white ${
+            ui.toast.type === 'error' ? 'bg-red-600' : ui.toast.type === 'success' ? 'bg-emerald-600' : 'bg-slate-900'
+          }">${ui.toast.msg}</div>`
+        : '';
 
-        let liveTimerInterval = null;
+      root.innerHTML = `
+        ${renderHeader()}
+        ${bodyHtml}
+        ${renderModal()}
+        ${toastHtml}
+      `;
+    }
 
-        // INICIALIZACIÓN DE LA APLICACIÓN
-        function initApp() {
-            loadLocalStorageData();
-            renderApp();
-            
-            // Iniciar intervalo para el temporizador de tiempo en vivo
-            if (liveTimerInterval) clearInterval(liveTimerInterval);
-            liveTimerInterval = setInterval(updateLiveTimers, 1000);
+    // --- Event handlers ---
+    window.goLanding = () => {
+      ui.view = 'landing';
+      ui.authError = '';
+      render();
+    };
+
+    window.selectRole = (role) => {
+      ui.authError = '';
+      if (role === 'owner') {
+        ui.view = ui.editModeUnlocked ? 'owner_dash' : 'owner_auth';
+      } else {
+        ui.view = 'emp_select';
+      }
+      render();
+    };
+
+    window.submitOwnerAuth = (e) => {
+      e.preventDefault();
+      const pass = document.getElementById('ownerPassInput').value;
+      const label = document.getElementById('ownerLabelInput').value;
+      if (pass === appState.masterPassword) {
+        ui.ownerLabel = label;
+        ui.editModeUnlocked = true;
+        ui.authError = '';
+        ui.view = 'owner_dash';
+        render();
+      } else {
+        ui.authError = 'Contraseña incorrecta.';
+        render();
+      }
+    };
+
+    window.chooseEmployeeForAuth = (empId) => {
+      ui.selectedEmployeeId = empId;
+      ui.authError = '';
+      ui.view = 'emp_auth';
+      render();
+    };
+
+    window.submitEmployeeAuth = (e) => {
+      e.preventDefault();
+      const emp = appState.employees.find((x) => x.id === ui.selectedEmployeeId);
+      const pass = document.getElementById('empPassInput').value;
+      if (emp && pass === emp.password) {
+        ui.authError = '';
+        ui.employeeTab = 'home';
+        ui.view = 'emp_space';
+        render();
+      } else {
+        ui.authError = 'Contraseña incorrecta.';
+        render();
+      }
+    };
+
+    window.setEmployeeTab = (tab) => {
+      ui.employeeTab = tab;
+      if (tab === 'chat' && ui.selectedEmployeeId) {
+        markChatRead(ui.selectedEmployeeId);
+      }
+      render();
+    };
+
+    window.setOwnerTab = (tab) => {
+      ui.ownerTab = tab;
+      if (tab === 'chat' && ui.selectedEmployeeId) {
+        markChatRead(ui.selectedEmployeeId);
+      }
+      render();
+    };
+
+    window.changeSelectedEmployee = (empId) => {
+      ui.selectedEmployeeId = empId;
+      ui.selectedCalendarDate = getTodayISO();
+      render();
+    };
+
+    window.clockIn = clockIn;
+
+    window.requestClockOutConfirm = (shiftId) => {
+      if (!shiftId) return;
+      ui.modal = { type: 'confirm_checkout', shiftId };
+      render();
+    };
+
+    window.executeClockOut = executeClockOut;
+    window.confirmShift = confirmShift;
+    window.toggleTask = toggleTask;
+
+    window.closeModal = () => {
+      ui.modal = null;
+      render();
+    };
+
+    window.openAdjustShiftModal = (shiftId) => {
+      ui.modal = { type: 'adjust_shift', shiftId };
+      render();
+    };
+
+    window.openOvertimeModal = (shiftId) => {
+      ui.modal = { type: 'adjust_shift', shiftId };
+      render();
+    };
+
+    window.submitAdjustShift = (e, shiftId) => {
+      e.preventDefault();
+      const startVal = new Date(document.getElementById('adjStartInput').value).getTime();
+      const endVal = new Date(document.getElementById('adjEndInput').value).getTime();
+      if (isNaN(startVal) || isNaN(endVal) || endVal <= startVal) {
+        showToast('La hora de salida debe ser posterior a la de entrada.', 'error');
+        return;
+      }
+      const shift = appState.shifts.find((s) => s.id === shiftId);
+      if (!shift) return;
+      shift.startTime = startVal;
+      shift.date = new Date(startVal).toISOString().slice(0, 10);
+      confirmShift(shiftId, endVal);
+    };
+
+    window.changeCalendarMonth = (delta) => {
+      const [y, m] = ui.calendarMonth.split('-').map(Number);
+      const d = new Date(y, m - 1 + delta, 1);
+      ui.calendarMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      render();
+    };
+
+    window.selectCalendarDay = (dateStr) => {
+      ui.selectedCalendarDate = dateStr;
+      render();
+    };
+
+    window.toggleCloseMonth = (empId, monthKey) => {
+      const key = `${empId}_${monthKey}`;
+      if (appState.closedMonths[key]) {
+        delete appState.closedMonths[key];
+        showToast('Mes reabierto.', 'info');
+      } else {
+        appState.closedMonths[key] = getTodayISO();
+        showToast('Cierre de mes marcado.', 'success');
+      }
+      saveState(true);
+      render();
+    };
+
+    window.submitChatMessage = (e, empId, senderName) => {
+      e.preventDefault();
+      const input = document.getElementById('chatInputField');
+      if (!input) return;
+      addChatMessage(empId, senderName, input.value);
+      input.value = '';
+    };
+
+    window.createEmployee = (e) => {
+      e.preventDefault();
+      const name = document.getElementById('newEmpName').value.trim();
+      const password = document.getElementById('newEmpPass').value;
+      const rate = parseFloat(document.getElementById('newEmpRate').value);
+      const dailyHours = parseFloat(document.getElementById('newEmpHours').value);
+      if (!name || !password) return;
+
+      const id = `emp_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+      appState.employees.push({
+        id,
+        name,
+        password,
+        dailyHours: isNaN(dailyHours) ? 6 : dailyHours,
+        rates: [{ rate: isNaN(rate) ? 10 : rate, startDate: '2026-01-01' }]
+      });
+      ui.selectedEmployeeId = id;
+      saveState(true);
+      showToast(`Empleada "${name}" creada.`, 'success');
+      render();
+    };
+
+    window.openEditEmployeeModal = (empId) => {
+      ui.modal = { type: 'edit_employee', empId };
+      render();
+    };
+
+    window.submitEditEmployee = (e, empId) => {
+      e.preventDefault();
+      const emp = appState.employees.find((x) => x.id === empId);
+      if (!emp) return;
+
+      const name = document.getElementById('editEmpName').value.trim();
+      const password = document.getElementById('editEmpPass').value;
+      const dailyHours = parseFloat(document.getElementById('editEmpHours').value);
+      const newRate = parseFloat(document.getElementById('editEmpRate').value);
+      const startDate = document.getElementById('editEmpRateStart').value;
+
+      if (name) emp.name = name;
+      if (password) emp.password = password;
+      if (!isNaN(dailyHours)) emp.dailyHours = dailyHours;
+
+      if (!isNaN(newRate) && startDate) {
+        const existingIdx = emp.rates.findIndex((r) => r.startDate === startDate);
+        if (existingIdx >= 0) {
+          emp.rates[existingIdx].rate = newRate;
+        } else {
+          emp.rates.push({ rate: newRate, startDate });
         }
+        emp.rates.sort((a, b) => a.startDate.localeCompare(b.startDate));
+      }
 
-        function loadLocalStorageData() {
-            const code = window.appState.householdCode;
-            const saved = localStorage.getItem(`hc_data_${code}`);
-            if (saved) {
-                try {
-                    const parsed = JSON.parse(saved);
-                    window.appState.employees = parsed.employees || [];
-                    window.appState.shifts = parsed.shifts || [];
-                    window.appState.tasks = parsed.tasks || [];
-                    window.appState.messages = parsed.messages || [];
-                    window.appState.paidHistory = parsed.paidHistory || [];
-                } catch(e) {}
-            }
+      ui.modal = null;
+      saveState(true);
+      showToast('Datos y tarifa actualizados.', 'success');
+      render();
+    };
 
-            // Datos iniciales por defecto si está vacío
-            if (window.appState.employees.length === 0) {
-                window.appState.employees = [
-                    { id: 'emp-wendy', name: 'Wendy', password: 'Wendy', hourlyRate: 10.50, contractedHoursPerDay: 4, activeClockIn: null }
-                ];
-                window.appState.tasks = [
-                    { id: 't-1', employeeId: 'emp-wendy', title: 'Planchar camisas armario principal', priority: 'HIGH', completed: false }
-                ];
-                window.appState.messages = [
-                    { id: 'm-1', employeeId: 'emp-wendy', senderRole: 'Propietario', text: '¡Hola Wendy! Recuerda revisar la lista de compras.', timestamp: '09:00', createdAt: Date.now() }
-                ];
-                saveLocalStorage();
-            }
+    window.deleteEmployee = (empId) => {
+      if (appState.employees.length <= 1) return;
+      appState.employees = appState.employees.filter((e) => e.id !== empId);
+      if (ui.selectedEmployeeId === empId) {
+        ui.selectedEmployeeId = appState.employees[0]?.id || null;
+      }
+      saveState(true);
+      showToast('Empleada eliminada.', 'info');
+      render();
+    };
 
-            if (!window.appState.selectedEmployeeId && window.appState.employees.length > 0 && window.appState.role !== 'TABLET') {
-                window.appState.selectedEmployeeId = window.appState.employees[0].id;
-            }
+    window.addSpecialTask = (e) => {
+      e.preventDefault();
+      const emp = appState.employees.find((x) => x.id === ui.selectedEmployeeId);
+      if (!emp) return;
+      const date = document.getElementById('taskDateInput').value;
+      const title = document.getElementById('taskTitleInput').value.trim();
+      const priority = document.getElementById('taskPriorityInput').value;
+      if (!date || !title) return;
+
+      appState.tasks.push({
+        id: `tk_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+        employeeId: emp.id,
+        date,
+        title,
+        priority,
+        completed: false
+      });
+      saveState(true);
+      showToast('Tarea especial añadida.', 'success');
+      render();
+    };
+
+    window.deleteTask = (taskId) => {
+      appState.tasks = appState.tasks.filter((t) => t.id !== taskId);
+      saveState(true);
+      render();
+    };
+
+    window.openCloudModal = () => {
+      ui.modal = { type: 'cloud_modal' };
+      render();
+    };
+
+    window.submitCloudConfig = (e) => {
+      e.preventDefault();
+      const code = document.getElementById('cloudCodeInput').value.trim().toUpperCase();
+      const enabled = document.getElementById('cloudEnabledInput').checked;
+      const url = document.getElementById('cloudUrlInput').value.trim().replace(/\/+$/, '');
+
+      if (code) appState.householdCode = code;
+      cloudConfig = { enabled, firebaseDbUrl: url };
+      saveCloudConfig(cloudConfig);
+      ui.modal = null;
+      saveState(true);
+      if (enabled && url) {
+        pullFromFirebase(false);
+      }
+      showToast('Configuración de enlace y nube guardada.', 'success');
+      render();
+    };
+
+    window.copyText = (txt) => {
+      navigator.clipboard?.writeText(txt).then(
+        () => showToast('Enlace copiado al portapapeles.', 'success'),
+        () => showToast('Selecciona y copia el enlace manualmente.', 'info')
+      );
+    };
+
+    // Live timer update every second without re-rendering full DOM
+    setInterval(() => {
+      if (ui.view === 'emp_space' && ui.employeeTab === 'home') {
+        const emp = appState.employees.find((e) => e.id === ui.selectedEmployeeId);
+        const activeShift = emp ? getActiveShift(emp.id) : null;
+        const elHMS = document.getElementById('liveChronoDisplay');
+        const elHM = document.getElementById('liveChronoHM');
+        if (activeShift && elHMS && elHM) {
+          const diffMs = Date.now() - activeShift.startTime;
+          elHMS.textContent = formatDurationHMS(diffMs);
+          elHM.textContent = formatDurationHM(diffMs / 60000);
         }
-
-        function saveLocalStorage() {
-            const code = window.appState.householdCode;
-            localStorage.setItem(`hc_data_${code}`, JSON.stringify({
-                employees: window.appState.employees,
-                shifts: window.appState.shifts,
-                tasks: window.appState.tasks,
-                messages: window.appState.messages,
-                paidHistory: window.appState.paidHistory
-            }));
-        }
-
-        // CONTROL DE VISTAS Y RENDERIZADO PRINCIPAL
-        function renderApp() {
-            document.getElementById('headerHouseholdCode').innerText = window.appState.householdCode;
-            const roleBadgeText = document.getElementById('roleBadgeText');
-
-            // Ocultar todas las vistas
-            document.getElementById('viewOwner').classList.add('hidden');
-            document.getElementById('viewTablet').classList.add('hidden');
-            document.getElementById('viewEmployeeMobile').classList.add('hidden');
-
-            const currentRole = window.appState.role;
-
-            if (currentRole === 'OWNER') {
-                roleBadgeText.innerText = 'Rol: Propietarios';
-                if (!window.appState.isOwnerAuthenticated) {
-                    openPinModal();
-                } else {
-                    document.getElementById('viewOwner').classList.remove('hidden');
-                    renderOwnerPanel();
-                }
-            } else if (currentRole === 'TABLET') {
-                roleBadgeText.innerText = 'Rol: Tablet Cocina';
-                document.getElementById('viewTablet').classList.remove('hidden');
-                renderTabletView();
-            } else if (currentRole === 'EMPLOYEE_MOBILE') {
-                roleBadgeText.innerText = 'Rol: Móvil Empleada';
-                document.getElementById('viewEmployeeMobile').classList.remove('hidden');
-                renderMobileEmployeeView();
-            }
-        }
-
-        // --- LÓGICA DEL PANEL DE PROPIETARIOS ---
-        function renderOwnerPanel() {
-            // Renderizar selector de empleadas (Pills)
-            const pillsContainer = document.getElementById('ownerEmployeePills');
-            pillsContainer.innerHTML = '';
-            window.appState.employees.forEach(emp => {
-                const active = emp.id === window.appState.selectedEmployeeId;
-                const btn = document.createElement('button');
-                btn.className = `px-3 py-1 rounded-xl text-xs font-bold transition-all ${active ? 'bg-teal-500 text-slate-950 shadow-md' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`;
-                btn.innerText = emp.name;
-                btn.onclick = () => {
-                    window.appState.selectedEmployeeId = emp.id;
-                    renderApp();
-                };
-                pillsContainer.appendChild(btn);
-            });
-
-            const activeEmp = getSelectedEmployee();
-            if (!activeEmp) return;
-
-            document.getElementById('ownerActiveEmpAvatar').innerText = activeEmp.name.charAt(0).toUpperCase();
-            document.getElementById('ownerActiveEmpName').innerText = activeEmp.name;
-            document.getElementById('ownerActiveEmpContract').innerText = `Jornada: ${activeEmp.contractedHoursPerDay}h/día · Tarifa: ${activeEmp.hourlyRate.toFixed(2)} €/h`;
-
-            // Badge de estado de fichaje activo
-            const statusBadge = document.getElementById('ownerActiveEmpStatusBadge');
-            if (activeEmp.activeClockIn) {
-                statusBadge.className = "mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
-                statusBadge.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span> Trabajando ahora`;
-            } else {
-                statusBadge.className = "mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-700 text-slate-300";
-                statusBadge.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-slate-400"></span> Fuera de servicio`;
-            }
-
-            // Alerta de horas extra (>1h sobre jornada contractual)
-            const overtimeBanner = document.getElementById('overtimeAlertBanner');
-            if (activeEmp.activeClockIn) {
-                const diffHours = (Date.now() - activeEmp.activeClockIn) / 3600000;
-                if (diffHours > (activeEmp.contractedHoursPerDay + 1)) {
-                    document.getElementById('overtimeAlertText').innerText = `${activeEmp.name} lleva más de 1 hora acumulada sobre su jornada normal (${activeEmp.contractedHoursPerDay}h) sin fichar salida.`;
-                    overtimeBanner.classList.remove('hidden');
-                } else {
-                    overtimeBanner.classList.add('hidden');
-                }
-            } else {
-                overtimeBanner.classList.add('hidden');
-            }
-
-            // Renderizar la pestaña seleccionada
-            const tabs = ['validation', 'calendar', 'tasks', 'chat', 'settings'];
-            tabs.forEach(t => {
-                const tabBtn = document.getElementById(`ownerTab-${t}`);
-                const tabContent = document.getElementById(`ownerTabContent-${t}`);
-                if (t === window.appState.selectedOwnerTab) {
-                    tabBtn.className = "owner-tab px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-teal-600 text-white flex items-center gap-2 transition-all shadow-md";
-                    tabContent.classList.remove('hidden');
-                } else {
-                    tabBtn.className = "owner-tab px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2 transition-all";
-                    tabContent.classList.add('hidden');
-                }
-            });
-
-            // Badge numérico de pendientes de validación
-            const pendingShifts = window.appState.shifts.filter(s => s.status === 'PENDING');
-            const pendingBadge = document.getElementById('pendingValidationBadge');
-            if (pendingShifts.length > 0) {
-                pendingBadge.innerText = pendingShifts.length;
-                pendingBadge.classList.remove('hidden');
-            } else {
-                pendingBadge.classList.add('hidden');
-            }
-
-            renderPendingShifts();
-            renderOwnerCalendar();
-            renderOwnerTasks();
-            renderOwnerChat();
-            document.getElementById('toggleShowEuroToEmp').checked = window.appState.showEuroToEmployee;
-            document.getElementById('settingsHouseholdCode').value = window.appState.householdCode;
-        }
-
-        function renderPendingShifts() {
-            const list = document.getElementById('pendingShiftsList');
-            const pending = window.appState.shifts.filter(s => s.status === 'PENDING');
-            if (pending.length === 0) {
-                list.innerHTML = `<p class="text-xs text-slate-400 italic py-4 text-center">No hay fichajes pendientes de confirmar.</p>`;
-                return;
-            }
-            list.innerHTML = '';
-            pending.forEach(s => {
-                const emp = window.appState.employees.find(e => e.id === s.employeeId);
-                const empName = emp ? emp.name : 'Empleada';
-                const div = document.createElement('div');
-                div.className = "p-4 bg-slate-900/90 rounded-2xl border border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3";
-                div.innerHTML = `
-                    <div>
-                        <span class="text-xs font-bold text-amber-400">🟡 Pendiente de Validar · ${empName}</span>
-                        <p class="text-sm font-black text-white mt-0.5">${s.date} · ${s.clockInTime} a ${s.clockOutTime} (${s.hours}h ${s.minutes}m)</p>
-                        ${s.notes ? `<p class="text-[11px] text-slate-400 mt-1 italic">${escapeHTML(s.notes)}</p>` : ''}
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <button onclick="openAdjustShiftModal('${s.id}')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700">Ajustar</button>
-                        <button onclick="confirmShift('${s.id}')" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl shadow-md">Confirmar Jornada</button>
-                    </div>
-                `;
-                list.appendChild(div);
-            });
-        }
-
-        function renderOwnerCalendar() {
-            const emp = getSelectedEmployee();
-            if (!emp) return;
-
-            const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-            document.getElementById('ownerCalendarMonthTitle').innerText = `${months[window.appState.selectedMonth]} ${window.appState.selectedYear}`;
-
-            const monthShifts = window.appState.shifts.filter(s => {
-                if (s.employeeId !== emp.id || s.status !== 'CONFIRMED') return false;
-                const d = new Date(s.timestamp || s.date);
-                return d.getMonth() === window.appState.selectedMonth && d.getFullYear() === window.appState.selectedYear;
-            });
-
-            let totalMinutes = 0;
-            monthShifts.forEach(s => totalMinutes += (s.hours * 60 + s.minutes));
-            const totalHoursDec = totalMinutes / 60;
-            const totalHoursFormatted = `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
-            const totalPayFormatted = (totalHoursDec * emp.hourlyRate).toFixed(2) + ' €';
-
-            document.getElementById('ownerCalTotalHours').innerText = totalHoursFormatted;
-            document.getElementById('ownerCalTotalPay').innerText = totalPayFormatted;
-
-            // Renderizar Grid del Mes
-            const grid = document.getElementById('ownerCalendarGrid');
-            grid.innerHTML = '';
-            const daysInMonth = new Date(window.appState.selectedYear, window.appState.selectedMonth + 1, 0).getDate();
-            const firstDayIndex = (new Date(window.appState.selectedYear, window.appState.selectedMonth, 1).getDay() + 6) % 7;
-
-            for (let i = 0; i < firstDayIndex; i++) {
-                grid.appendChild(document.createElement('div'));
-            }
-
-            for (let day = 1; day <= daysInMonth; day++) {
-                const dateStr = `${window.appState.selectedYear}-${String(window.appState.selectedMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                const dayShifts = window.appState.shifts.filter(s => s.employeeId === emp.id && s.date === dateStr);
-                const cell = document.createElement('div');
-                cell.className = "bg-slate-900/70 p-2 rounded-xl border border-slate-800 min-h-[64px] flex flex-col justify-between";
-
-                let shiftsHtml = '';
-                dayShifts.forEach(s => {
-                    const isConf = s.status === 'CONFIRMED';
-                    shiftsHtml += `<div class="text-[10px] font-bold px-1.5 py-0.5 rounded ${isConf ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-300'}">${s.hours}h ${s.minutes}m</div>`;
-                });
-
-                cell.innerHTML = `
-                    <div class="text-[11px] font-bold text-slate-400">${day}</div>
-                    <div class="space-y-1">${shiftsHtml}</div>
-                `;
-                grid.appendChild(cell);
-            }
-
-            // Historial de meses cerrados
-            const histList = document.getElementById('paidMonthsHistoryList');
-            histList.innerHTML = '';
-            const empHistory = window.appState.paidHistory.filter(h => h.employeeId === emp.id);
-            if (empHistory.length === 0) {
-                histList.innerHTML = `<p class="text-slate-400 italic">No hay cierres de mes registrados.</p>`;
-            } else {
-                empHistory.forEach(h => {
-                    const item = document.createElement('div');
-                    item.className = "p-3 bg-slate-900 rounded-xl border border-slate-700 flex justify-between items-center";
-                    item.innerHTML = `
-                        <div>
-                            <span class="font-bold text-white">${h.monthName}</span>
-                            <p class="text-slate-400">${h.totalHours} · Pagado el ${h.paidDate}</p>
-                        </div>
-                        <span class="font-black text-emerald-400 text-sm">${h.totalPay}</span>
-                    `;
-                    histList.appendChild(item);
-                });
-            }
-        }
-
-        function renderOwnerTasks() {
-            const emp = getSelectedEmployee();
-            if (!emp) return;
-            const list = document.getElementById('ownerTasksList');
-            list.innerHTML = '';
-            const empTasks = window.appState.tasks.filter(t => t.employeeId === emp.id);
-            if (empTasks.length === 0) {
-                list.innerHTML = `<p class="text-xs text-slate-400 italic py-4 text-center">No hay tareas especiales asignadas para hoy.</p>`;
-                return;
-            }
-            empTasks.forEach(t => {
-                const item = document.createElement('div');
-                item.className = "p-3.5 bg-slate-900 rounded-2xl border border-slate-700/80 flex items-center justify-between gap-3";
-                item.innerHTML = `
-                    <div class="flex items-center space-x-3">
-                        <input type="checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTaskCompleted('${t.id}')" class="w-4 h-4 rounded text-teal-500 focus:ring-0">
-                        <span class="text-xs font-semibold text-white ${t.completed ? 'line-through text-slate-400' : ''}">${escapeHTML(t.title)}</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-[10px] px-2 py-0.5 rounded-full font-bold ${t.priority === 'HIGH' ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-700 text-slate-300'}">${t.priority}</span>
-                        <button onclick="deleteTask('${t.id}')" class="text-slate-500 hover:text-rose-400 p-1"><i class="fa-solid fa-trash"></i></button>
-                    </div>
-                `;
-                list.appendChild(item);
-            });
-        }
-
-        function renderOwnerChat() {
-            const emp = getSelectedEmployee();
-            if (!emp) return;
-            document.getElementById('ownerChatEmpTitle').innerText = `Chat Privado con ${emp.name}`;
-            document.getElementById('ownerChatAvatar').innerText = emp.name.charAt(0).toUpperCase();
-
-            const container = document.getElementById('ownerChatContainer');
-            container.innerHTML = '';
-            const msgs = window.appState.messages.filter(m => m.employeeId === emp.id);
-            msgs.forEach(m => {
-                const isOwner = m.senderRole === 'Propietario';
-                const div = document.createElement('div');
-                div.className = `flex flex-col ${isOwner ? 'items-end' : 'items-start'}`;
-                div.innerHTML = `
-                    <div class="max-w-[80%] p-3 rounded-2xl text-xs ${isOwner ? 'bg-teal-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none'}">
-                        <p class="font-bold text-[10px] opacity-75 mb-0.5">${m.senderRole}</p>
-                        <p class="whitespace-pre-line">${escapeHTML(m.text)}</p>
-                        <p class="text-[9px] opacity-60 text-right mt-1">${m.timestamp}</p>
-                    </div>
-                `;
-                container.appendChild(div);
-            });
-            container.scrollTop = container.scrollHeight;
-        }
-
-
-        // --- LÓGICA DE TABLET COCINA ---
-        function renderTabletView() {
-            const selectorGrid = document.getElementById('tabletEmployeeSelectorGrid');
-            const activeCard = document.getElementById('tabletActiveEmployeeCard');
-            const selectorWrapper = document.getElementById('tabletEmployeeSelectorWrapper');
-
-            if (!window.appState.selectedEmployeeId) {
-                // Selección de Tarjeta de Empleada
-                selectorWrapper.classList.remove('hidden');
-                activeCard.classList.add('hidden');
-                selectorGrid.innerHTML = '';
-                window.appState.employees.forEach(emp => {
-                    const card = document.createElement('div');
-                    card.className = "bg-slate-800 hover:bg-slate-700/80 border border-slate-700 rounded-3xl p-6 text-center cursor-pointer transition-all transform hover:-translate-y-1 shadow-xl space-y-4";
-                    card.onclick = () => openTabletPasswordModal(emp.id);
-                    card.innerHTML = `
-                        <div class="w-20 h-20 bg-teal-600 text-white font-black text-3xl rounded-3xl flex items-center justify-center mx-auto shadow-lg shadow-teal-500/20">
-                            ${emp.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                            <h3 class="text-xl font-bold text-white">${emp.name}</h3>
-                            <p class="text-xs text-slate-400 mt-1">${emp.activeClockIn ? '🟢 Trabajando' : '⚪ Fuera de servicio'}</p>
-                        </div>
-                        <button class="w-full py-3 bg-teal-500 text-slate-950 font-black rounded-2xl text-sm shadow-md">
-                            Tocar para Fichar
-                        </button>
-                    `;
-                    selectorGrid.appendChild(card);
-                });
-            } else {
-                // Empleada autenticada en Tablet -> Mostrar vista apaisada de 2 columnas
-                selectorWrapper.classList.add('hidden');
-                activeCard.classList.remove('hidden');
-
-                const emp = getSelectedEmployee();
-                if (!emp) return;
-
-                document.getElementById('tabletEmpAvatar').innerText = emp.name.charAt(0).toUpperCase();
-                document.getElementById('tabletEmpName').innerText = emp.name;
-
-                const statusBadge = document.getElementById('tabletEmpStatusBadge');
-                const btnClockIn = document.getElementById('btnTabletClockIn');
-                const btnClockOut = document.getElementById('btnTabletClockOut');
-
-                if (emp.activeClockIn) {
-                    statusBadge.className = "mt-1 inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
-                    statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Trabajando ahora`;
-                    btnClockIn.disabled = true;
-                    btnClockIn.className = "py-4 px-4 rounded-2xl bg-slate-700 opacity-50 cursor-not-allowed text-white font-black text-lg flex items-center justify-center gap-2";
-                    btnClockOut.disabled = false;
-                    btnClockOut.className = "py-4 px-4 rounded-2xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-black text-lg shadow-lg flex items-center justify-center gap-2 touch-action-manipulation";
-                } else {
-                    statusBadge.className = "mt-1 inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-slate-700 text-slate-300";
-                    statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-slate-400"></span> Fuera de servicio`;
-                    btnClockIn.disabled = false;
-                    btnClockIn.className = "py-4 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black text-lg shadow-lg flex items-center justify-center gap-2 touch-action-manipulation";
-                    btnClockOut.disabled = true;
-                    btnClockOut.className = "py-4 px-4 rounded-2xl bg-slate-700 opacity-50 cursor-not-allowed text-white font-black text-lg flex items-center justify-center gap-2";
-                }
-
-                // Cálculo de acumulados confirmados del mes
-                const monthShifts = window.appState.shifts.filter(s => {
-                    if (s.employeeId !== emp.id || s.status !== 'CONFIRMED') return false;
-                    const d = new Date(s.timestamp || s.date);
-                    return d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear();
-                });
-                let totalMinutes = 0;
-                monthShifts.forEach(s => totalMinutes += (s.hours * 60 + s.minutes));
-                const totalHoursFormatted = `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
-                document.getElementById('tabletEmpConfirmedHours').innerText = totalHoursFormatted;
-
-                const euroWrapper = document.getElementById('tabletEuroWrapper');
-                if (window.appState.showEuroToEmployee) {
-                    euroWrapper.classList.remove('hidden');
-                    document.getElementById('tabletEmpConfirmedPay').innerText = ((totalMinutes / 60) * emp.hourlyRate).toFixed(2) + ' €';
-                } else {
-                    euroWrapper.classList.add('hidden');
-                }
-
-                renderTabletTasks();
-                renderTabletChat();
-            }
-        }
-
-        function renderTabletTasks() {
-            const emp = getSelectedEmployee();
-            if (!emp) return;
-            const container = document.getElementById('tabletTasksList');
-            container.innerHTML = '';
-            const tasks = window.appState.tasks.filter(t => t.employeeId === emp.id);
-            if (tasks.length === 0) {
-                container.innerHTML = `<p class="text-xs text-slate-400 italic py-3">No hay tareas pendientes para hoy.</p>`;
-                return;
-            }
-            tasks.forEach(t => {
-                const item = document.createElement('div');
-                item.className = "p-3 bg-slate-900 rounded-xl border border-slate-700/80 flex items-center space-x-3";
-                item.innerHTML = `
-                    <input type="checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTaskCompleted('${t.id}')" class="w-5 h-5 rounded text-teal-500 focus:ring-0">
-                    <span class="text-xs font-semibold text-white ${t.completed ? 'line-through text-slate-400' : ''}">${escapeHTML(t.title)}</span>
-                `;
-                container.appendChild(item);
-            });
-        }
-
-        function renderTabletChat() {
-            const emp = getSelectedEmployee();
-            if (!emp) return;
-            const container = document.getElementById('tabletChatQuickBox');
-            container.innerHTML = '';
-            const msgs = window.appState.messages.filter(m => m.employeeId === emp.id);
-            msgs.forEach(m => {
-                const isEmp = m.senderRole === emp.name;
-                const div = document.createElement('div');
-                div.className = `flex flex-col ${isEmp ? 'items-end' : 'items-start'}`;
-                div.innerHTML = `
-                    <div class="max-w-[85%] p-2.5 rounded-xl text-xs ${isEmp ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-200 border border-slate-700'}">
-                        <p class="font-bold text-[9px] opacity-75">${m.senderRole}</p>
-                        <p>${escapeHTML(m.text)}</p>
-                    </div>
-                `;
-                container.appendChild(div);
-            });
-            container.scrollTop = container.scrollHeight;
-        }
-
-        // --- LÓGICA DE MÓVIL EMPLEADA ---
-        function renderMobileEmployeeView() {
-            const emp = getSelectedEmployee();
-            if (!emp) return;
-            document.getElementById('mobEmpAvatar').innerText = emp.name.charAt(0).toUpperCase();
-            document.getElementById('mobEmpName').innerText = emp.name;
-
-            const btnIn = document.getElementById('btnMobClockIn');
-            const btnOut = document.getElementById('btnMobClockOut');
-            const badge = document.getElementById('mobEmpStatusBadge');
-
-            if (emp.activeClockIn) {
-                badge.className = "px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
-                badge.innerText = "Trabajando";
-                btnIn.disabled = true;
-                btnIn.className = "py-4 rounded-2xl bg-slate-700 opacity-50 text-white font-bold text-base";
-                btnOut.disabled = false;
-                btnOut.className = "py-4 rounded-2xl bg-rose-600 text-white font-bold text-base shadow-lg";
-            } else {
-                badge.className = "px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-700 text-slate-300";
-                badge.innerText = "Fuera de servicio";
-                btnIn.disabled = false;
-                btnIn.className = "py-4 rounded-2xl bg-emerald-600 text-white font-bold text-base shadow-lg";
-                btnOut.disabled = true;
-                btnOut.className = "py-4 rounded-2xl bg-slate-700 opacity-50 text-white font-bold text-base";
-            }
-
-            const mobTasks = document.getElementById('mobTasksList');
-            mobTasks.innerHTML = '';
-            window.appState.tasks.filter(t => t.employeeId === emp.id).forEach(t => {
-                const item = document.createElement('div');
-                item.className = "p-3 bg-slate-900 rounded-xl border border-slate-700 flex items-center space-x-3";
-                item.innerHTML = `
-                    <input type="checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTaskCompleted('${t.id}')" class="w-4 h-4 text-teal-500">
-                    <span class="text-xs text-white ${t.completed ? 'line-through text-slate-400' : ''}">${escapeHTML(t.title)}</span>
-                `;
-                mobTasks.appendChild(item);
-            });
-
-            const mobChat = document.getElementById('mobChatBox');
-            mobChat.innerHTML = '';
-            window.appState.messages.filter(m => m.employeeId === emp.id).forEach(m => {
-                const isEmp = m.senderRole === emp.name;
-                const div = document.createElement('div');
-                div.className = `flex flex-col ${isEmp ? 'items-end' : 'items-start'}`;
-                div.innerHTML = `
-                    <div class="max-w-[85%] p-2 rounded-xl text-xs ${isEmp ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-200 border border-slate-700'}">
-                        <p>${escapeHTML(m.text)}</p>
-                    </div>
-                `;
-                mobChat.appendChild(div);
-            });
-            mobChat.scrollTop = mobChat.scrollHeight;
-        }
-
-        // ACTUALIZACIÓN DE CRONÓMETROS EN TIEMPO REAL
-        function updateLiveTimers() {
-            const emp = getSelectedEmployee();
-            let timerStr = "00:00:00";
-            if (emp && emp.activeClockIn) {
-                const elapsedMs = Date.now() - emp.activeClockIn;
-                const sec = Math.floor((elapsedMs / 1000) % 60);
-                const min = Math.floor((elapsedMs / (1000 * 60)) % 60);
-                const hrs = Math.floor(elapsedMs / (1000 * 60 * 60));
-                timerStr = `${String(hrs).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
-            }
-
-            const ownerLive = document.getElementById('ownerLiveTimer');
-            if (ownerLive) ownerLive.innerText = timerStr;
-
-            const tabletTimer = document.getElementById('tabletTimerDisplay');
-            if (tabletTimer) tabletTimer.innerText = timerStr;
-
-            const mobTimer = document.getElementById('mobTimerDisplay');
-            if (mobTimer) mobTimer.innerText = timerStr;
-        }
-
-
-        // ACCIONES DE FICHAJE
-        function handleEmpClockIn() {
-            const emp = getSelectedEmployee();
-            if (!emp) return;
-            emp.activeClockIn = Date.now();
-            
-            // Mensaje automático al chat
-            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            window.appState.messages.push({
-                id: 'm-' + Date.now(),
-                employeeId: emp.id,
-                senderRole: emp.name,
-                text: `🟢 Entrada fichada a las ${timeStr}`,
-                timestamp: timeStr,
-                createdAt: Date.now()
-            });
-
-            saveLocalStorage();
-            renderApp();
-            showNoticeModal("Entrada Registrada", `¡Buen día ${emp.name}! Tu tiempo ha empezado a contar.`, "fa-solid fa-circle-check text-emerald-400");
-        }
-
-        function triggerEmpClockOutModal() {
-            document.getElementById('modalClockOutConfirm').classList.remove('hidden');
-        }
-
-        function closeClockOutModal() {
-            document.getElementById('modalClockOutConfirm').classList.add('hidden');
-        }
-
-        function confirmEmpClockOut() {
-            closeClockOutModal();
-            const emp = getSelectedEmployee();
-            if (!emp || !emp.activeClockIn) return;
-
-            const now = Date.now();
-            const elapsedMs = now - emp.activeClockIn;
-            const totalMin = Math.round(elapsedMs / (1000 * 60));
-            const hours = Math.floor(totalMin / 60);
-            const minutes = totalMin % 60;
-
-            const inDate = new Date(emp.activeClockIn);
-            const outDate = new Date(now);
-            const dateStr = `${inDate.getFullYear()}-${String(inDate.getMonth() + 1).padStart(2, '0')}-${String(inDate.getDate()).padStart(2, '0')}`;
-
-            // Crear registro de turno pendiente
-            window.appState.shifts.push({
-                id: 's-' + Date.now(),
-                employeeId: emp.id,
-                date: dateStr,
-                clockInTime: inDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                clockOutTime: outDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                hours: hours,
-                minutes: minutes,
-                status: 'PENDING',
-                timestamp: now
-            });
-
-            // Restablecer entrada activa
-            emp.activeClockIn = null;
-
-            // Notificación al chat privado
-            const timeStr = outDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            window.appState.messages.push({
-                id: 'm-' + Date.now(),
-                employeeId: emp.id,
-                senderRole: emp.name,
-                text: `🔴 Salida fichada a las ${timeStr} · Duración: ${hours}h ${minutes}m (Pendiente de confirmar por propietarios)`,
-                timestamp: timeStr,
-                createdAt: Date.now()
-            });
-
-            saveLocalStorage();
-            renderApp();
-            showNoticeModal("Salida Registrada", "Has fichado tu salida correctamente. ¡Que tengas buen día!", "fa-solid fa-circle-check text-teal-400");
-        }
-
-
-        // GESTIÓN DE ROLES Y AUTENTICACIÓN
-        function selectAppRole(role) {
-            closeRoleSelectorModal();
-            if (role === 'OWNER') {
-                window.appState.role = 'OWNER';
-                localStorage.setItem('hc_role', 'OWNER');
-                if (!window.appState.isOwnerAuthenticated) openPinModal();
-                else renderApp();
-            } else {
-                window.appState.role = role;
-                localStorage.setItem('hc_role', role);
-                renderApp();
-            }
-        }
-
-        function openRoleSelectorModal() { document.getElementById('modalRoleSelector').classList.remove('hidden'); }
-        function closeRoleSelectorModal() { document.getElementById('modalRoleSelector').classList.add('hidden'); }
-
-        function openPinModal() {
-            document.getElementById('pinAuthInput').value = '';
-            document.getElementById('pinAuthError').classList.add('hidden');
-            document.getElementById('modalPinAuth').classList.remove('hidden');
-        }
-        function closePinModal() { document.getElementById('modalPinAuth').classList.add('hidden'); }
-        function handlePinSubmit(e) {
-            e.preventDefault();
-            const val = document.getElementById('pinAuthInput').value.trim();
-            if (val === window.appState.ownerPin) {
-                window.appState.isOwnerAuthenticated = true;
-                closePinModal();
-                renderApp();
-            } else {
-                document.getElementById('pinAuthError').classList.remove('hidden');
-            }
-        }
-
-        function openTabletPasswordModal(empId) {
-            window.appState.pendingTabletEmpId = empId;
-            const emp = window.appState.employees.find(e => e.id === empId);
-            if (!emp) return;
-            document.getElementById('tabletAuthAvatar').innerText = emp.name.charAt(0).toUpperCase();
-            document.getElementById('tabletAuthEmpName').innerText = emp.name;
-            document.getElementById('tabletPasswordInput').value = '';
-            document.getElementById('tabletPasswordError').classList.add('hidden');
-            document.getElementById('modalTabletAuthPassword').classList.remove('hidden');
-        }
-        function closeTabletPasswordModal() { document.getElementById('modalTabletAuthPassword').classList.add('hidden'); }
-        function handleTabletPasswordSubmit(e) {
-            e.preventDefault();
-            const inputPass = document.getElementById('tabletPasswordInput').value.trim();
-            const emp = window.appState.employees.find(e => e.id === window.appState.pendingTabletEmpId);
-            if (emp && inputPass.toLowerCase() === (emp.password || emp.name).toLowerCase()) {
-                window.appState.selectedEmployeeId = emp.id;
-                closeTabletPasswordModal();
-                renderApp();
-            } else {
-                document.getElementById('tabletPasswordError').classList.remove('hidden');
-            }
-        }
-        function deselectTabletEmployee() {
-            window.appState.selectedEmployeeId = null;
-            renderApp();
-        }
-
-        // OTROS MANEJADORES DE INTERFAZ
-        function switchOwnerTab(tab) { window.appState.selectedOwnerTab = tab; renderApp(); }
-        
-        function confirmShift(shiftId) {
-            const shift = window.appState.shifts.find(s => s.id === shiftId);
-            if (shift) {
-                shift.status = 'CONFIRMED';
-                saveLocalStorage();
-                renderApp();
-            }
-        }
-
-        function openAdjustShiftModal(shiftId) {
-            const shift = window.appState.shifts.find(s => s.id === shiftId);
-            if (!shift) return;
-            document.getElementById('adjustShiftId').value = shift.id;
-            document.getElementById('adjustInTime').value = shift.clockInTime;
-            document.getElementById('adjustOutTime').value = shift.clockOutTime;
-            document.getElementById('adjustNotes').value = shift.notes || '';
-            document.getElementById('modalAdjustShift').classList.remove('hidden');
-        }
-        function closeAdjustShiftModal() { document.getElementById('modalAdjustShift').classList.add('hidden'); }
-        function handleSaveAdjustedShift(e) {
-            e.preventDefault();
-            const shiftId = document.getElementById('adjustShiftId').value;
-            const shift = window.appState.shifts.find(s => s.id === shiftId);
-            if (shift) {
-                const inT = document.getElementById('adjustInTime').value;
-                const outT = document.getElementById('adjustOutTime').value;
-                const [inH, inM] = inT.split(':').map(Number);
-                const [outH, outM] = outT.split(':').map(Number);
-                let diffM = (outH * 60 + outM) - (inH * 60 + inM);
-                if (diffM < 0) diffM += 24 * 60;
-
-                shift.clockInTime = inT;
-                shift.clockOutTime = outT;
-                shift.hours = Math.floor(diffM / 60);
-                shift.minutes = diffM % 60;
-                shift.notes = document.getElementById('adjustNotes').value;
-                shift.status = 'CONFIRMED';
-
-                saveLocalStorage();
-                renderApp();
-                closeAdjustShiftModal();
-            }
-        }
-        function handleDeleteShift() {
-            const shiftId = document.getElementById('adjustShiftId').value;
-            window.appState.shifts = window.appState.shifts.filter(s => s.id !== shiftId);
-            saveLocalStorage();
-            renderApp();
-            closeAdjustShiftModal();
-        }
-
-        function toggleTaskCompleted(taskId) {
-            const t = window.appState.tasks.find(x => x.id === taskId);
-            if (t) {
-                t.completed = !t.completed;
-                saveLocalStorage();
-                renderApp();
-            }
-        }
-
-        function deleteTask(taskId) {
-            window.appState.tasks = window.appState.tasks.filter(t => t.id !== taskId);
-            saveLocalStorage();
-            renderApp();
-        }
-
-        function openAddTaskModal() { document.getElementById('modalAddTask').classList.remove('hidden'); }
-        function closeAddTaskModal() { document.getElementById('modalAddTask').classList.add('hidden'); }
-        function handleSaveTask(e) {
-            e.preventDefault();
-            const emp = getSelectedEmployee();
-            if (!emp) return;
-            window.appState.tasks.push({
-                id: 't-' + Date.now(),
-                employeeId: emp.id,
-                title: document.getElementById('taskFormTitle').value.trim(),
-                priority: document.getElementById('taskFormPriority').value,
-                completed: false
-            });
-            document.getElementById('taskFormTitle').value = '';
-            saveLocalStorage();
-            renderApp();
-            closeAddTaskModal();
-        }
-
-        function handleSendOwnerChatMessage(e) {
-            e.preventDefault();
-            const input = document.getElementById('ownerChatInput');
-            const txt = input.value.trim();
-            const emp = getSelectedEmployee();
-            if (!txt || !emp) return;
-            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            window.appState.messages.push({
-                id: 'm-' + Date.now(),
-                employeeId: emp.id,
-                senderRole: 'Propietario',
-                text: txt,
-                timestamp: timeStr,
-                createdAt: Date.now()
-            });
-            input.value = '';
-            saveLocalStorage();
-            renderApp();
-        }
-
-        function handleSendEmpChatMessage(e) {
-            e.preventDefault();
-            const emp = getSelectedEmployee();
-            if (!emp) return;
-            const input = document.getElementById(window.appState.role === 'TABLET' ? 'tabletChatInput' : 'mobChatInput');
-            const txt = input.value.trim();
-            if (!txt) return;
-            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            window.appState.messages.push({
-                id: 'm-' + Date.now(),
-                employeeId: emp.id,
-                senderRole: emp.name,
-                text: txt,
-                timestamp: timeStr,
-                createdAt: Date.now()
-            });
-            input.value = '';
-            saveLocalStorage();
-            renderApp();
-        }
-
-        function openEmployeeManagerModal() {
-            const list = document.getElementById('managerEmpList');
-            list.innerHTML = '';
-            window.appState.employees.forEach(emp => {
-                const item = document.createElement('div');
-                item.className = "p-3 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-between";
-                item.innerHTML = `
-                    <div>
-                        <span class="font-bold text-white text-xs">${emp.name}</span>
-                        <p class="text-[11px] text-slate-400">${emp.hourlyRate} €/h · ${emp.contractedHoursPerDay}h/día · Clave: ${emp.password || emp.name}</p>
-                    </div>
-                    <div class="flex gap-2">
-                        <button onclick="openEmployeeFormModal('${emp.id}')" class="text-teal-400 hover:text-teal-300 p-1 text-xs"><i class="fa-solid fa-pen"></i></button>
-                    </div>
-                `;
-                list.appendChild(item);
-            });
-            document.getElementById('modalEmployeeManager').classList.remove('hidden');
-        }
-        function closeEmployeeManagerModal() { document.getElementById('modalEmployeeManager').classList.add('hidden'); }
-
-        function openEmployeeFormModal(empId) {
-            if (empId) {
-                const emp = window.appState.employees.find(e => e.id === empId);
-                document.getElementById('empFormTitle').innerText = "Editar Empleada";
-                document.getElementById('empFormId').value = emp.id;
-                document.getElementById('empFormName').value = emp.name;
-                document.getElementById('empFormRate').value = emp.hourlyRate;
-                document.getElementById('empFormContract').value = emp.contractedHoursPerDay;
-                document.getElementById('empFormPassword').value = emp.password || emp.name;
-            } else {
-                document.getElementById('empFormTitle').innerText = "Nueva Empleada";
-                document.getElementById('empFormId').value = '';
-                document.getElementById('empFormName').value = '';
-                document.getElementById('empFormRate').value = '10.50';
-                document.getElementById('empFormContract').value = '4';
-                document.getElementById('empFormPassword').value = '';
-            }
-            document.getElementById('modalEmployeeForm').classList.remove('hidden');
-        }
-        function closeEmployeeFormModal() { document.getElementById('modalEmployeeForm').classList.add('hidden'); }
-
-        function handleSaveEmployee(e) {
-            e.preventDefault();
-            const id = document.getElementById('empFormId').value;
-            const name = document.getElementById('empFormName').value.trim();
-            const rate = parseFloat(document.getElementById('empFormRate').value);
-            const contract = parseFloat(document.getElementById('empFormContract').value);
-            const pass = document.getElementById('empFormPassword').value.trim() || name;
-
-            if (id) {
-                const emp = window.appState.employees.find(e => e.id === id);
-                if (emp) {
-                    emp.name = name;
-                    emp.hourlyRate = rate;
-                    emp.contractedHoursPerDay = contract;
-                    emp.password = pass;
-                }
-            } else {
-                const newId = 'emp-' + Date.now();
-                window.appState.employees.push({
-                    id: newId,
-                    name: name,
-                    hourlyRate: rate,
-                    contractedHoursPerDay: contract,
-                    password: pass,
-                    activeClockIn: null
-                });
-                window.appState.selectedEmployeeId = newId;
-            }
-            saveLocalStorage();
-            closeEmployeeFormModal();
-            openEmployeeManagerModal();
-            renderApp();
-        }
-
-        function handleToggleEuroVisibility(val) {
-            window.appState.showEuroToEmployee = val;
-            localStorage.setItem('hc_show_euro', val);
-            saveLocalStorage();
-            renderApp();
-        }
-
-        function changeOwnerMonth(delta) {
-            let m = window.appState.selectedMonth + delta;
-            let y = window.appState.selectedYear;
-            if (m < 0) { m = 11; y--; }
-            else if (m > 11) { m = 0; y++; }
-            window.appState.selectedMonth = m;
-            window.appState.selectedYear = y;
-            renderApp();
-        }
-
-        function closeAndPayMonth() {
-            const emp = getSelectedEmployee();
-            if (!emp) return;
-            const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-            const curMonthName = `${months[window.appState.selectedMonth]} ${window.appState.selectedYear}`;
-
-            const totalHoursStr = document.getElementById('ownerCalTotalHours').innerText;
-            const totalPayStr = document.getElementById('ownerCalTotalPay').innerText;
-
-            window.appState.paidHistory.push({
-                id: 'p-' + Date.now(),
-                employeeId: emp.id,
-                monthName: curMonthName,
-                totalHours: totalHoursStr,
-                totalPay: totalPayStr,
-                paidDate: new Date().toLocaleDateString()
-            });
-
-            saveLocalStorage();
-            renderApp();
-            showNoticeModal("Mes Liquidado", `Se ha cerrado el mes de ${curMonthName} y guardado en el historial.`, "fa-solid fa-file-invoice-dollar text-emerald-400");
-        }
-
-        function saveSettingsHouseholdCode() {
-            const val = document.getElementById('settingsHouseholdCode').value.trim().toUpperCase();
-            if (val) {
-                window.appState.householdCode = val;
-                localStorage.setItem('hc_household_code', val);
-                saveLocalStorage();
-                renderApp();
-                showNoticeModal("Código Actualizado", `Nuevo Código de Hogar: ${val}`, "fa-solid fa-circle-check text-teal-400");
-            }
-        }
-
-        function saveSettingsOwnerPin() {
-            const val = document.getElementById('settingsOwnerPin').value.trim();
-            if (val) {
-                window.appState.ownerPin = val;
-                localStorage.setItem('hc_owner_pin', val);
-                document.getElementById('settingsOwnerPin').value = '';
-                showNoticeModal("PIN Guardado", "El PIN de acceso a Propietarios ha sido modificado.", "fa-solid fa-key text-amber-400");
-            }
-        }
-
-        function getSelectedEmployee() {
-            let emp = window.appState.employees.find(e => e.id === window.appState.selectedEmployeeId);
-            if (!emp && window.appState.employees.length > 0 && window.appState.role !== 'TABLET') {
-                emp = window.appState.employees[0];
-                window.appState.selectedEmployeeId = emp.id;
-            }
-            return emp;
-        }
-
-        function showNoticeModal(title, msg, iconClass = "fa-solid fa-circle-info text-teal-400") {
-            document.getElementById('noticeTitle').innerText = title;
-            document.getElementById('noticeMessage').innerText = msg;
-            const iconEl = document.getElementById('noticeIcon');
-            iconEl.className = `w-12 h-12 rounded-2xl flex items-center justify-center mx-auto text-xl bg-slate-800 ${iconClass}`;
-            document.getElementById('modalNotice').classList.remove('hidden');
-        }
-        function closeNoticeModal() { document.getElementById('modalNotice').classList.add('hidden'); }
-
-        function escapeHTML(str) {
-            if (!str) return '';
-            return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
-        }
-
-        // Ejecutar inicialización al cargar el documento
-        document.addEventListener('DOMContentLoaded', initApp);
-    </script>
+      }
+    }, 1000);
+
+    // Background cloud sync polling
+    setInterval(() => {
+      if (cloudConfig.enabled && cloudConfig.firebaseDbUrl) {
+        pullFromFirebase(true);
+      }
+    }, 5000);
+
+    render();
+    if (cloudConfig.enabled && cloudConfig.firebaseDbUrl) {
+      pullFromFirebase(true);
+    }
+  </script>
 </body>
 </html>
