@@ -217,6 +217,7 @@
 
     let cloudConfig = loadCloudConfig();
     let appState = loadLocalState();
+    let isSyncingNow = false;
 
     const urlParams = new URLSearchParams(window.location.search);
     const paramCode = urlParams.get('hogar');
@@ -231,18 +232,18 @@
     }
 
     let ui = {
-      view: 'landing', // landing | owner_auth | owner_dash | emp_select | emp_auth | emp_space
+      view: 'landing',
       selectedEmployeeId: appState.employees[0]?.id || null,
       ownerLabel: 'Propietario 1 (Máster)',
       editModeUnlocked: false,
-      employeeTab: 'home', // home | calendar | chat
-      ownerTab: 'overview', // overview | employees | tasks | calendar | chat | sync
+      employeeTab: 'home',
+      ownerTab: 'overview',
       calendarMonth: getTodayISO().slice(0, 7),
       selectedCalendarDate: getTodayISO(),
       toast: null,
       unreadChatForEmployee: {},
       lastSeenMessageCount: {},
-      modal: null, // null | { type: 'confirm_checkout', shiftId } | { type: 'adjust_shift', shiftId } | { type: 'edit_employee', empId } | { type: 'cloud_modal' }
+      modal: null,
       authError: ''
     };
 
@@ -256,11 +257,20 @@
       }, 3200);
     }
 
-    function saveState(pushCloud = true) {
+    function hasActiveInputFocus() {
+      const active = document.activeElement;
+      if (!active) return false;
+      const tag = active.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    }
+
+    async function saveState(pushCloud = true) {
       appState.lastUpdated = Date.now();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
       if (pushCloud && cloudConfig.enabled && cloudConfig.firebaseDbUrl) {
-        pushToFirebase().catch(() => {});
+        try {
+          await pushToFirebase();
+        } catch {}
       }
     }
 
@@ -280,21 +290,34 @@
     }
 
     async function pullFromFirebase(silent = true) {
-      if (!cloudConfig.enabled || !cloudConfig.firebaseDbUrl) return;
+      if (!cloudConfig.enabled || !cloudConfig.firebaseDbUrl || isSyncingNow) return;
+      isSyncingNow = true;
       try {
-        const res = await fetch(`${getFirebaseEndpoint()}?t=${Date.now()}`);
+        const res = await fetch(`${getFirebaseEndpoint()}?t=${Date.now()}`, { cache: 'no-store' });
         if (!res.ok) return;
         const remote = await res.json();
         if (!remote || typeof remote !== 'object') return;
         if ((remote.lastUpdated || 0) > (appState.lastUpdated || 0)) {
-          appState = { ...DEFAULT_STATE, ...remote };
+          appState = {
+            ...DEFAULT_STATE,
+            ...remote,
+            employees: Array.isArray(remote.employees) ? remote.employees : DEFAULT_STATE.employees,
+            shifts: Array.isArray(remote.shifts) ? remote.shifts : [],
+            tasks: Array.isArray(remote.tasks) ? remote.tasks : [],
+            messages: Array.isArray(remote.messages) ? remote.messages : [],
+            closedMonths: remote.closedMonths && typeof remote.closedMonths === 'object' ? remote.closedMonths : {}
+          };
           localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
           detectNewChatMessages();
-          render();
+          if (!hasActiveInputFocus() && !ui.modal) {
+            render();
+          }
           if (!silent) showToast('Datos sincronizados desde la nube.', 'success');
         }
       } catch {
         if (!silent) showToast('No se pudo conectar con la nube.', 'error');
+      } finally {
+        isSyncingNow = false;
       }
     }
 
@@ -333,7 +356,7 @@
       detectNewChatMessages();
     }
 
-    function addChatMessage(employeeId, sender, text) {
+    async function addChatMessage(employeeId, sender, text) {
       const clean = text.trim();
       if (!clean) return;
       appState.messages.push({
@@ -345,7 +368,7 @@
         isSystem: false
       });
       markChatRead(employeeId);
-      saveState(true);
+      await saveState(true);
       render();
     }
 
@@ -353,7 +376,7 @@
       return appState.shifts.find((s) => s.employeeId === employeeId && s.status === 'active') || null;
     }
 
-    function clockIn(employeeId) {
+    async function clockIn(employeeId) {
       const emp = appState.employees.find((e) => e.id === employeeId);
       if (!emp) return;
       if (getActiveShift(employeeId)) {
@@ -378,12 +401,12 @@
         employeeId,
         `🟢 ENTRADA de ${emp.name} a las ${formatTimeHHMM(now)} (${today}).`
       );
-      saveState(true);
+      await saveState(true);
       showToast(`Entrada fichada a las ${formatTimeHHMM(now)}`, 'success');
       render();
     }
 
-    function executeClockOut(shiftId) {
+    async function executeClockOut(shiftId) {
       const shift = appState.shifts.find((s) => s.id === shiftId);
       if (!shift || shift.status !== 'active') return;
       const emp = appState.employees.find((e) => e.id === shift.employeeId);
@@ -399,12 +422,12 @@
         `🟠 SALIDA de ${emp ? emp.name : 'Empleada'} a las ${formatTimeHHMM(now)} (${formatDurationHM(elapsedMinutes)}). Pendiente de confirmar por Propietario.`
       );
       ui.modal = null;
-      saveState(true);
+      await saveState(true);
       showToast('Salida registrada. Pendiente de confirmación del propietario.', 'info');
       render();
     }
 
-    function confirmShift(shiftId, customEndTimeMs = null) {
+    async function confirmShift(shiftId, customEndTimeMs = null) {
       const shift = appState.shifts.find((s) => s.id === shiftId);
       if (!shift) return;
       const emp = appState.employees.find((e) => e.id === shift.employeeId);
@@ -419,14 +442,17 @@
       shift.status = 'confirmed';
       shift.confirmedBy = ui.ownerLabel;
 
+      ui.calendarMonth = getMonthKey(shift.date);
+      ui.selectedCalendarDate = shift.date;
+
       const amount = ((exactMinutes / 60) * shift.rate).toFixed(2).replace('.', ',');
       addSystemMessage(
         shift.employeeId,
         `✅ Turno CONFIRMADO (${shift.date}, salida ${formatTimeHHMM(shift.endTime)}): ${formatDurationHM(exactMinutes)} (${amount} €) sumados al total.`
       );
       ui.modal = null;
-      saveState(true);
-      showToast('Turno confirmado y sumado al cálculo mensual.', 'success');
+      await saveState(true);
+      showToast('Turno confirmado y sumado al calendario.', 'success');
       render();
     }
 
@@ -451,11 +477,11 @@
       return alerts;
     }
 
-    function toggleTask(taskId) {
+    async function toggleTask(taskId) {
       const task = appState.tasks.find((t) => t.id === taskId);
       if (!task) return;
       task.completed = !task.completed;
-      saveState(true);
+      await saveState(true);
       render();
     }
 
@@ -716,7 +742,7 @@
       const monthIndex = Number(monthStr) - 1;
       const firstDay = new Date(year, monthIndex, 1);
       const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-      const startWeekday = (firstDay.getDay() + 6) % 7; // Monday = 0
+      const startWeekday = (firstDay.getDay() + 6) % 7;
       const summary = getMonthSummary(employeeId, ui.calendarMonth);
 
       const cells = [];
@@ -1001,7 +1027,6 @@
             ui.employeeTab === 'home'
               ? `
                 <div class="employee-main-grid space-y-5 landscape:space-y-0">
-                  <!-- IZQUIERDA (en apaisado / tablet): CRONO Y FICHAJE -->
                   <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
                     <div class="flex items-center justify-between">
                       <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Control de jornada</span>
@@ -1077,7 +1102,6 @@
                     </div>
                   </div>
 
-                  <!-- DERECHA (en apaisado / tablet): TAREAS ESPECIALES DEL DÍA -->
                   <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
                     <div class="flex items-center justify-between mb-3">
                       <div>
@@ -1197,7 +1221,7 @@
               <button onclick="setOwnerTab('calendar')" class="px-3 py-1.5 rounded-lg text-xs font-bold ${
                 ui.ownerTab === 'calendar' ? 'bg-indigo-600 text-white' : 'text-slate-700 hover:bg-white'
               }">
-                Calendario y €
+                Calendario
               </button>
               <button onclick="setOwnerTab('chat')" class="px-3 py-1.5 rounded-lg text-xs font-bold ${
                 ui.ownerTab === 'chat'
@@ -1593,7 +1617,6 @@
       `;
     }
 
-    // --- Event handlers ---
     window.goLanding = () => {
       ui.view = 'landing';
       ui.authError = '';
@@ -1697,7 +1720,7 @@
       render();
     };
 
-    window.submitAdjustShift = (e, shiftId) => {
+    window.submitAdjustShift = async (e, shiftId) => {
       e.preventDefault();
       const startVal = new Date(document.getElementById('adjStartInput').value).getTime();
       const endVal = new Date(document.getElementById('adjEndInput').value).getTime();
@@ -1709,7 +1732,7 @@
       if (!shift) return;
       shift.startTime = startVal;
       shift.date = new Date(startVal).toISOString().slice(0, 10);
-      confirmShift(shiftId, endVal);
+      await confirmShift(shiftId, endVal);
     };
 
     window.changeCalendarMonth = (delta) => {
@@ -1724,7 +1747,7 @@
       render();
     };
 
-    window.toggleCloseMonth = (empId, monthKey) => {
+    window.toggleCloseMonth = async (empId, monthKey) => {
       const key = `${empId}_${monthKey}`;
       if (appState.closedMonths[key]) {
         delete appState.closedMonths[key];
@@ -1733,19 +1756,20 @@
         appState.closedMonths[key] = getTodayISO();
         showToast('Cierre de mes marcado.', 'success');
       }
-      saveState(true);
+      await saveState(true);
       render();
     };
 
-    window.submitChatMessage = (e, empId, senderName) => {
+    window.submitChatMessage = async (e, empId, senderName) => {
       e.preventDefault();
       const input = document.getElementById('chatInputField');
       if (!input) return;
-      addChatMessage(empId, senderName, input.value);
+      const text = input.value;
       input.value = '';
+      await addChatMessage(empId, senderName, text);
     };
 
-    window.createEmployee = (e) => {
+    window.createEmployee = async (e) => {
       e.preventDefault();
       const name = document.getElementById('newEmpName').value.trim();
       const password = document.getElementById('newEmpPass').value;
@@ -1762,7 +1786,7 @@
         rates: [{ rate: isNaN(rate) ? 10 : rate, startDate: '2026-01-01' }]
       });
       ui.selectedEmployeeId = id;
-      saveState(true);
+      await saveState(true);
       showToast(`Empleada "${name}" creada.`, 'success');
       render();
     };
@@ -1772,7 +1796,7 @@
       render();
     };
 
-    window.submitEditEmployee = (e, empId) => {
+    window.submitEditEmployee = async (e, empId) => {
       e.preventDefault();
       const emp = appState.employees.find((x) => x.id === empId);
       if (!emp) return;
@@ -1798,23 +1822,23 @@
       }
 
       ui.modal = null;
-      saveState(true);
+      await saveState(true);
       showToast('Datos y tarifa actualizados.', 'success');
       render();
     };
 
-    window.deleteEmployee = (empId) => {
+    window.deleteEmployee = async (empId) => {
       if (appState.employees.length <= 1) return;
       appState.employees = appState.employees.filter((e) => e.id !== empId);
       if (ui.selectedEmployeeId === empId) {
         ui.selectedEmployeeId = appState.employees[0]?.id || null;
       }
-      saveState(true);
+      await saveState(true);
       showToast('Empleada eliminada.', 'info');
       render();
     };
 
-    window.addSpecialTask = (e) => {
+    window.addSpecialTask = async (e) => {
       e.preventDefault();
       const emp = appState.employees.find((x) => x.id === ui.selectedEmployeeId);
       if (!emp) return;
@@ -1831,14 +1855,14 @@
         priority,
         completed: false
       });
-      saveState(true);
+      await saveState(true);
       showToast('Tarea especial añadida.', 'success');
       render();
     };
 
-    window.deleteTask = (taskId) => {
+    window.deleteTask = async (taskId) => {
       appState.tasks = appState.tasks.filter((t) => t.id !== taskId);
-      saveState(true);
+      await saveState(true);
       render();
     };
 
@@ -1847,7 +1871,7 @@
       render();
     };
 
-    window.submitCloudConfig = (e) => {
+    window.submitCloudConfig = async (e) => {
       e.preventDefault();
       const code = document.getElementById('cloudCodeInput').value.trim().toUpperCase();
       const enabled = document.getElementById('cloudEnabledInput').checked;
@@ -1857,9 +1881,9 @@
       cloudConfig = { enabled, firebaseDbUrl: url };
       saveCloudConfig(cloudConfig);
       ui.modal = null;
-      saveState(true);
+      await saveState(true);
       if (enabled && url) {
-        pullFromFirebase(false);
+        await pullFromFirebase(false);
       }
       showToast('Configuración de enlace y nube guardada.', 'success');
       render();
@@ -1872,7 +1896,6 @@
       );
     };
 
-    // Live timer update every second without re-rendering full DOM
     setInterval(() => {
       if (ui.view === 'emp_space' && ui.employeeTab === 'home') {
         const emp = appState.employees.find((e) => e.id === ui.selectedEmployeeId);
@@ -1887,12 +1910,11 @@
       }
     }, 1000);
 
-    // Background cloud sync polling
     setInterval(() => {
       if (cloudConfig.enabled && cloudConfig.firebaseDbUrl) {
         pullFromFirebase(true);
       }
-    }, 5000);
+    }, 1500);
 
     render();
     if (cloudConfig.enabled && cloudConfig.firebaseDbUrl) {
