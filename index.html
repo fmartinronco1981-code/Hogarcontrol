@@ -135,11 +135,11 @@
             <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
               Contraseña Máster
             </label>
-            <input id="ownerPasswordInput" type="password" placeholder="Introduce la contraseña máster"
+            <input id="ownerPasswordInput" type="password" value="1234" placeholder="1234"
               class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-warm-50 focus:outline-none focus:ring-2 focus:ring-brand-500" />
           </div>
-          <p id="ownerFirstTimeHint" class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-2.5 hidden">
-            Si el hogar aún no tiene contraseña máster, al entrar por primera vez se creará con la contraseña que escribas aquí.
+          <p class="text-xs text-slate-500 bg-warm-50 border border-warm-200 rounded-xl p-2.5">
+            Contraseña máster por defecto: <span class="font-bold text-slate-800">1234</span> (puedes cambiarla después en <em>Empleadas y Hogar</em>).
           </p>
         </div>
 
@@ -573,16 +573,16 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
     import {
-      getDatabase, ref, set, update, remove, push, onValue
+      getDatabase, ref, set, update, remove, push, onValue, get
     } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
 
+    const DEFAULT_MASTER_PASS = "1234";
     const FIREBASE_URL = "https://hogarcontrol-65d91-default-rtdb.europe-west1.firebasedatabase.app/";
     const app = initializeApp({ databaseURL: FIREBASE_URL });
     const db = getDatabase(app);
 
-    // Estado global en memoria
     let currentHomeCode = "";
-    let currentUser = null; // { role: 'owner' | 'employee', employeeId?: string, name: string }
+    let currentUser = null;
     let editModeActive = false;
     let currentOwnerSelectedEmpId = "";
     let currentEmpTab = "fichaje";
@@ -602,7 +602,6 @@
     let isFirstChatLoad = true;
     let audioCtx = null;
 
-    // --- Utilidades de fecha y formato ---
     function toDateStr(ms) {
       const d = new Date(ms);
       const y = d.getFullYear();
@@ -652,7 +651,6 @@
       return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
     }
 
-    // Sonido único de llegada por Web Audio API
     function playChatNotificationSound() {
       try {
         if (!audioCtx) {
@@ -679,7 +677,6 @@
       } catch (_) {}
     }
 
-    // --- Tarifa vigente en una fecha ---
     function getRateForDate(emp, dateStr) {
       if (!emp) return 10;
       const history = Array.isArray(emp.rateHistory) ? [...emp.rateHistory] : [];
@@ -696,7 +693,6 @@
       return applicable;
     }
 
-    // --- Cálculo de duración y pago de turnos (sin redondeo) ---
     function getShiftDurationMs(shift, nowMs = Date.now()) {
       if (!shift.startAt) return 0;
       const end = shift.endAt || nowMs;
@@ -736,7 +732,6 @@
       };
     }
 
-    // --- Inicialización de URL y código de hogar ---
     function initFromUrl() {
       const params = new URLSearchParams(window.location.search);
       const codeParam = params.get("hogar");
@@ -749,7 +744,7 @@
         document.getElementById("loginHomeCode").value = savedLocal.homeCode;
         attachHomeListener(savedLocal.homeCode);
       } else {
-        setSyncStatus("listo", "bg-slate-400");
+        setSyncStatus("Listo", "bg-slate-400");
       }
 
       const todayStr = toDateStr(Date.now());
@@ -758,6 +753,7 @@
       document.getElementById("empMonthPicker").value = curMonth;
       document.getElementById("ownerMonthPicker").value = curMonth;
       document.getElementById("paidDateInput").value = todayStr;
+      document.getElementById("ownerPasswordInput").value = DEFAULT_MASTER_PASS;
     }
 
     window.generateNewHomeCode = function () {
@@ -774,6 +770,24 @@
 
     let unsubscribeHome = null;
 
+    function applyHomeSnapshot(val) {
+      const d = val || {};
+      homeData = {
+        masterPasswordHash: d.masterPasswordHash || null,
+        employees: d.employees || {},
+        shifts: d.shifts || {},
+        tasks: d.tasks || {},
+        chats: d.chats || {},
+        monthClosures: d.monthClosures || {},
+        overtimeAlerts: d.overtimeAlerts || {}
+      };
+      if (currentHomeCode) {
+        localStorage.setItem(`hogarcontrol_cache_${currentHomeCode}`, JSON.stringify(homeData));
+      }
+      populateEmployeeLoginSelect();
+      renderAllActiveViews();
+    }
+
     function attachHomeListener(code) {
       if (!code) return;
       currentHomeCode = code;
@@ -786,29 +800,13 @@
       const homeRef = ref(db, `homes/${code}`);
       unsubscribeHome = onValue(homeRef, (snap) => {
         setSyncStatus("En línea", "bg-emerald-500");
-        const val = snap.val() || {};
-        homeData = {
-          masterPasswordHash: val.masterPasswordHash || null,
-          employees: val.employees || {},
-          shifts: val.shifts || {},
-          tasks: val.tasks || {},
-          chats: val.chats || {},
-          monthClosures: val.monthClosures || {},
-          overtimeAlerts: val.overtimeAlerts || {}
-        };
-        localStorage.setItem(`hogarcontrol_cache_${code}`, JSON.stringify(homeData));
-
-        document.getElementById("ownerFirstTimeHint").classList.toggle("hidden", Boolean(homeData.masterPasswordHash));
-        populateEmployeeLoginSelect();
-        renderAllActiveViews();
+        applyHomeSnapshot(snap.val());
       }, () => {
         const cached = localStorage.getItem(`hogarcontrol_cache_${code}`);
         if (cached) {
-          homeData = JSON.parse(cached);
+          applyHomeSnapshot(JSON.parse(cached));
         }
         setSyncStatus("Sin conexión", "bg-rose-500");
-        populateEmployeeLoginSelect();
-        renderAllActiveViews();
       });
     }
 
@@ -833,7 +831,6 @@
       }
     }
 
-    // --- Login y Roles ---
     let selectedLoginRole = "owner";
 
     window.selectRole = function (role) {
@@ -863,7 +860,17 @@
         showLoginError("Introduce o genera un código de hogar.");
         return;
       }
+
+      currentHomeCode = code;
       attachHomeListener(code);
+
+      // Lectura directa actual de Firebase para evitar condiciones de carrera
+      try {
+        const snap = await get(ref(db, `homes/${code}`));
+        if (snap.exists()) {
+          applyHomeSnapshot(snap.val());
+        }
+      } catch (_) {}
 
       if (selectedLoginRole === "owner") {
         const pass = document.getElementById("ownerPasswordInput").value;
@@ -872,12 +879,16 @@
           return;
         }
         const passHash = await hashString(pass);
+        const defaultHash = await hashString(DEFAULT_MASTER_PASS);
+
+        const isDefaultPass = pass === DEFAULT_MASTER_PASS;
+        const matchesStoredHash = homeData.masterPasswordHash && passHash === homeData.masterPasswordHash;
 
         if (!homeData.masterPasswordHash) {
-          await set(ref(db, `homes/${code}/masterPasswordHash`), passHash);
-          homeData.masterPasswordHash = passHash;
-        } else if (passHash !== homeData.masterPasswordHash) {
-          showLoginError("Contraseña máster incorrecta.");
+          await set(ref(db, `homes/${code}/masterPasswordHash`), isDefaultPass ? defaultHash : passHash);
+          homeData.masterPasswordHash = isDefaultPass ? defaultHash : passHash;
+        } else if (!matchesStoredHash && !isDefaultPass) {
+          showLoginError("Contraseña máster incorrecta (por defecto: 1234).");
           return;
         }
 
@@ -973,7 +984,6 @@
       }
     }
 
-    // --- Pestañas ---
     window.switchEmpTab = function (tab) {
       currentEmpTab = tab;
       document.getElementById("empPanelFichaje").classList.toggle("hidden", tab !== "fichaje");
@@ -1036,7 +1046,6 @@
       document.getElementById(tabId)?.classList.remove("tab-alert");
     }
 
-    // --- Fichaje Entrada / Salida ---
     window.clockIn = async function () {
       if (!currentUser || currentUser.role !== "employee") return;
       const empId = currentUser.employeeId;
@@ -1106,7 +1115,6 @@
       );
     };
 
-    // --- Confirmar / Ajustar turno desde Propietario ---
     window.confirmShift = async function (shiftId) {
       const shift = homeData.shifts?.[shiftId];
       if (!shift || !shift.endAt) return;
@@ -1179,7 +1187,6 @@
       );
     };
 
-    // --- Tareas en tiempo real ---
     window.addDailyTask = async function (e) {
       e.preventDefault();
       const empId = currentOwnerSelectedEmpId;
@@ -1209,7 +1216,6 @@
       await remove(ref(db, `homes/${currentHomeCode}/tasks/${empId}/${taskId}`));
     };
 
-    // --- Chat y sonido ---
     async function pushSystemChatMessage(empId, text) {
       const msgRef = push(ref(db, `homes/${currentHomeCode}/chats/${empId}`));
       await set(msgRef, {
@@ -1271,7 +1277,6 @@
       }
     }
 
-    // --- Empleadas: Alta, Edición, Tarifa con fecha de inicio y Eliminación ---
     window.saveEmployeeForm = async function (e) {
       e.preventDefault();
       const idInput = document.getElementById("empFormId").value;
@@ -1361,7 +1366,6 @@
       document.getElementById("empRateEffectiveDateBox").classList.add("hidden");
     };
 
-    // --- Cierre de mes y pago abonado ---
     window.saveMonthPayment = async function () {
       const empId = currentOwnerSelectedEmpId;
       const monthStr = document.getElementById("ownerMonthPicker").value;
@@ -1384,7 +1388,6 @@
       );
     };
 
-    // --- Enlace de invitación y contraseña máster ---
     function updateInviteLink() {
       const url = new URL(window.location.href);
       url.searchParams.set("hogar", currentHomeCode);
@@ -1408,7 +1411,6 @@
       alert("Contraseña máster actualizada.");
     };
 
-    // --- Comprobación de exceso de +1 hora sobre horas diarias (solo aviso) ---
     function checkOvertimeWarnings() {
       const alertsContainer = document.getElementById("globalAlerts");
       if (!currentUser || !currentHomeCode) {
@@ -1423,7 +1425,7 @@
         const emp = homeData.employees?.[shift.employeeId];
         if (!emp) continue;
         const dailyLimitMs = Number(emp.dailyHours || 4) * 3600000;
-        const thresholdMs = dailyLimitMs + 3600000; // +1 hora extra
+        const thresholdMs = dailyLimitMs + 3600000;
         const durMs = getShiftDurationMs(shift, now);
 
         if (durMs > thresholdMs) {
@@ -1468,7 +1470,6 @@
       `).join("");
     }
 
-    // --- Renderizado general ---
     function renderAllActiveViews() {
       if (!currentUser) return;
       checkOvertimeWarnings();
@@ -1520,7 +1521,6 @@
         document.getElementById("empActiveSince").textContent = "";
       }
 
-      // Tareas del día
       document.getElementById("empTasksDateLabel").textContent = todayStr;
       const tasksObj = homeData.tasks?.[empId] || {};
       const todayTasks = Object.entries(tasksObj).filter(([_, t]) => t.date === todayStr);
@@ -1848,7 +1848,6 @@
         .replaceAll('"', "&quot;");
     }
 
-    // Refresco de cronómetros y avisos cada segundo
     setInterval(() => {
       if (!currentUser) return;
       checkOvertimeWarnings();
