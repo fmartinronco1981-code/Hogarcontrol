@@ -1,0 +1,1658 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-900 font-sans select-none">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HogarControl - Gestión de Empleadas de Hogar</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdfa',
+                            100: '#ccfbf1',
+                            500: '#14b8a6',
+                            600: '#0d9488',
+                            700: '#0f766e',
+                            800: '#115e59',
+                            900: '#134e4a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 9999px; }
+        .touch-action-manipulation { touch-action: manipulation; }
+    </style>
+</head>
+<body class="h-full text-slate-100 bg-slate-900 antialiased selection:bg-teal-500 selection:text-white pb-16 md:pb-0">
+
+    <div id="app" class="min-h-screen flex flex-col">
+        <!-- HEADER PRINCIPAL -->
+        <header class="bg-slate-950 border-b border-slate-800 sticky top-0 z-30 shadow-lg">
+            <div class="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+                <!-- Logo & Código del Hogar -->
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-2xl bg-teal-500 text-slate-950 font-black flex items-center justify-center text-xl shadow-lg shadow-teal-500/20">
+                        <i class="fa-solid fa-house-chimney-user"></i>
+                    </div>
+                    <div>
+                        <h1 class="font-bold text-base sm:text-lg leading-tight flex items-center gap-2 text-white">
+                            HogarControl
+                            <span id="syncBadge" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium">
+                                Almacenado localmente
+                            </span>
+                        </h1>
+                        <p class="text-xs text-slate-400 flex items-center gap-1.5">
+                            Hogar: <span id="headerHouseholdCode" class="font-mono font-bold text-teal-400">HOGAR-2026</span>
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Selector de Rol -->
+                <div class="flex items-center space-x-2">
+                    <button onclick="openRoleSelectorModal()" id="currentRoleBadge" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 shadow-sm bg-slate-800 text-slate-200 border-slate-700 hover:bg-slate-700">
+                        <i class="fa-solid fa-users-gear text-teal-400"></i>
+                        <span id="roleBadgeText">Rol: Tablet Cocina</span>
+                        <i class="fa-solid fa-chevron-down text-[10px] opacity-60"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- ALERTA DE HORAS EXTRA (PROPIETARIOS) -->
+        <div id="overtimeAlertBanner" class="hidden bg-rose-950 border-b border-rose-800 text-rose-200 px-4 py-3 shadow-inner">
+            <div class="max-w-7xl mx-auto flex items-center justify-between gap-3 text-xs sm:text-sm">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-triangle-exclamation text-rose-400 text-lg animate-bounce"></i>
+                    <div>
+                        <span class="font-bold text-white">¡Alerta de Jornada Superada!</span>
+                        <span id="overtimeAlertText">Wendy lleva más de 1 hora sobre su horario contractual sin fichar salida.</span>
+                    </div>
+                </div>
+                <button onclick="switchOwnerTab('validation')" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex-shrink-0">
+                    Revisar Fichaje
+                </button>
+            </div>
+        </div>
+
+        <!-- CONTENIDO PRINCIPAL -->
+        <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
+
+            <!-- VISTA 1: ROL PROPIETARIOS -->
+            <div id="viewOwner" class="space-y-6 hidden">
+
+                <!-- BARRA DE SELECCIÓN DE EMPLEADA -->
+                <div class="bg-slate-800/80 rounded-2xl p-3 border border-slate-700/70 flex items-center justify-between gap-3 overflow-x-auto">
+                    <div class="flex items-center space-x-2">
+                        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider pl-1">Gestionar:</span>
+                        <div id="ownerEmployeePills" class="flex items-center gap-2"></div>
+                    </div>
+                    <button onclick="openEmployeeManagerModal()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-teal-300 font-bold text-xs rounded-xl border border-slate-600 transition-colors flex items-center gap-1.5 flex-shrink-0">
+                        <i class="fa-solid fa-user-gear"></i> Perfiles & Tarifas
+                    </button>
+                </div>
+
+                <!-- PESTAÑAS PROPIETARIO -->
+                <nav class="flex space-x-2 border-b border-slate-800 pb-2 overflow-x-auto">
+                    <button onclick="switchOwnerTab('validation')" id="ownerTab-validation" class="owner-tab px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-teal-600 text-white flex items-center gap-2 transition-all">
+                        <i class="fa-solid fa-clock-rotate-left"></i> Validar Fichajes
+                        <span id="pendingValidationBadge" class="hidden bg-amber-400 text-slate-950 text-[10px] font-black px-1.5 py-0.5 rounded-full">0</span>
+                    </button>
+                    <button onclick="switchOwnerTab('calendar')" id="ownerTab-calendar" class="owner-tab px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2 transition-all">
+                        <i class="fa-solid fa-calendar-days"></i> Calendario & Nómina
+                    </button>
+                    <button onclick="switchOwnerTab('tasks')" id="ownerTab-tasks" class="owner-tab px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2 transition-all">
+                        <i class="fa-solid fa-list-check"></i> Tareas Especiales
+                    </button>
+                    <button onclick="switchOwnerTab('chat')" id="ownerTab-chat" class="owner-tab px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2 transition-all">
+                        <i class="fa-solid fa-comments"></i> Mensajes Privados
+                    </button>
+                    <button onclick="switchOwnerTab('settings')" id="ownerTab-settings" class="owner-tab px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2 transition-all">
+                        <i class="fa-solid fa-sliders"></i> Opciones
+                    </button>
+                </nav>
+
+                <!-- TAB: BANDEJA DE VALIDACIÓN -->
+                <div id="ownerTabContent-validation" class="owner-tab-content space-y-6">
+                    <div class="bg-slate-800 rounded-3xl p-6 border border-slate-700 shadow-lg space-y-4">
+                        <div class="flex items-center justify-between border-b border-slate-700 pb-4">
+                            <div>
+                                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                                    <i class="fa-solid fa-check-to-slot text-teal-400"></i> Turnos Pendientes de Confirmar
+                                </h3>
+                                <p class="text-xs text-slate-400 mt-0.5">Al confirmar, las horas se suman a la liquidación oficial del mes.</p>
+                            </div>
+                        </div>
+                        <div id="pendingShiftsList" class="space-y-3 min-h-[100px]"></div>
+                    </div>
+
+                    <div class="bg-slate-800 rounded-3xl p-6 border border-slate-700 shadow-lg flex flex-col md:flex-row items-center justify-between gap-6">
+                        <div class="flex items-center space-x-4">
+                            <div id="ownerActiveEmpAvatar" class="w-16 h-16 rounded-2xl bg-teal-600 text-white font-bold text-2xl flex items-center justify-center shadow-lg">W</div>
+                            <div>
+                                <h4 id="ownerActiveEmpName" class="text-lg font-bold text-white">Wendy</h4>
+                                <p id="ownerActiveEmpContract" class="text-xs text-slate-400">Jornada: 4h/día · Tarifa: 10.50 €/h</p>
+                                <div id="ownerActiveEmpStatusBadge" class="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-700 text-slate-300">
+                                    <span class="w-2.5 h-2.5 rounded-full bg-slate-400"></span> Fuera de servicio
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="text-center md:text-right bg-slate-900/60 p-4 rounded-2xl border border-slate-700/60 min-w-[200px]">
+                            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tiempo en Vivo Hoy</p>
+                            <p id="ownerLiveTimer" class="font-mono text-3xl font-black text-teal-400 mt-1">00:00:00</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB: CALENDARIO Y NÓMINA -->
+                <div id="ownerTabContent-calendar" class="owner-tab-content hidden space-y-6">
+                    <div class="bg-slate-800 rounded-3xl p-6 border border-slate-700 shadow-lg space-y-6">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700 pb-4">
+                            <div class="flex items-center space-x-3">
+                                <button onclick="changeOwnerMonth(-1)" class="p-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white">
+                                    <i class="fa-solid fa-chevron-left"></i>
+                                </button>
+                                <h3 id="ownerCalendarMonthTitle" class="text-lg font-bold text-white min-w-[160px] text-center">Noviembre 2026</h3>
+                                <button onclick="changeOwnerMonth(1)" class="p-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white">
+                                    <i class="fa-solid fa-chevron-right"></i>
+                                </button>
+                            </div>
+
+                            <div class="flex flex-wrap items-center gap-4 bg-slate-900 p-4 rounded-2xl border border-slate-700">
+                                <div>
+                                    <p class="text-[10px] uppercase font-bold text-slate-400">Horas Confirmadas</p>
+                                    <p id="ownerCalTotalHours" class="text-lg font-bold text-white">0h 0m</p>
+                                </div>
+                                <div class="h-8 w-px bg-slate-700"></div>
+                                <div>
+                                    <p class="text-[10px] uppercase font-bold text-teal-400">Total a Pagar (€)</p>
+                                    <p id="ownerCalTotalPay" class="text-xl font-black text-teal-400">0,00 €</p>
+                                </div>
+                                <button onclick="closeAndPayMonth()" class="ml-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-md transition-colors flex items-center gap-1.5">
+                                    <i class="fa-solid fa-file-invoice-dollar"></i> Cerrar Mes / Marcar Pagado
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- TOGGLE EUROS PARA EMPLEADA -->
+                        <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-700/80 flex items-center justify-between">
+                            <div class="flex items-center space-x-3">
+                                <i class="fa-solid fa-eye text-teal-400 text-lg"></i>
+                                <div>
+                                    <p class="text-xs font-bold text-white">Mostrar acumulado en Euros (€) a la Empleada</p>
+                                    <p class="text-[11px] text-slate-400">Si está activado, la empleada verá los euros calculados en su pantalla.</p>
+                                </div>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="toggleShowEuroToEmp" onchange="handleToggleEuroVisibility(this.checked)" class="sr-only peer">
+                                <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-500"></div>
+                            </label>
+                        </div>
+
+                        <!-- GRID CALENDARIO -->
+                        <div class="space-y-2">
+                            <div class="grid grid-cols-7 gap-1 text-center text-xs font-bold text-slate-400 uppercase py-2">
+                                <div>Lun</div><div>Mar</div><div>Mié</div><div>Jue</div><div>Vie</div><div>Sáb</div><div>Dom</div>
+                            </div>
+                            <div id="ownerCalendarGrid" class="grid grid-cols-7 gap-1.5"></div>
+                        </div>
+                    </div>
+
+                    <!-- HISTORIAL DE MESES PAGADOS -->
+                    <div class="bg-slate-800 rounded-3xl p-6 border border-slate-700 shadow-lg space-y-4">
+                        <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-box-archive text-teal-400"></i> Historial de Meses Liquidados
+                        </h4>
+                        <div id="paidMonthsHistoryList" class="space-y-2 text-xs"></div>
+                    </div>
+                </div>
+
+                <!-- TAB: TAREAS ESPECIALES -->
+                <div id="ownerTabContent-tasks" class="owner-tab-content hidden space-y-6">
+                    <div class="bg-slate-800 rounded-3xl p-6 border border-slate-700 shadow-lg space-y-4">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-700 pb-4">
+                            <div>
+                                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                                    <i class="fa-solid fa-list-check text-teal-400"></i> Tareas Especiales del Día
+                                </h3>
+                                <p class="text-xs text-slate-400">Asigna tareas específicas o con prioridad para la empleada seleccionada.</p>
+                            </div>
+                            <button onclick="openAddTaskModal()" class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs transition-colors shadow-md flex items-center gap-1.5">
+                                <i class="fa-solid fa-plus"></i> Añadir Tarea Especial
+                            </button>
+                        </div>
+                        <div id="ownerTasksList" class="space-y-3 min-h-[150px]"></div>
+                    </div>
+                </div>
+
+                <!-- TAB: CHAT 1 A 1 -->
+                <div id="ownerTabContent-chat" class="owner-tab-content hidden space-y-4">
+                    <div class="bg-slate-800 rounded-3xl border border-slate-700 shadow-lg flex flex-col h-[520px] overflow-hidden">
+                        <div class="bg-slate-950 p-4 border-b border-slate-800 flex items-center space-x-3">
+                            <div id="ownerChatAvatar" class="w-10 h-10 rounded-xl bg-teal-600 text-white font-bold flex items-center justify-center">W</div>
+                            <div>
+                                <h4 id="ownerChatEmpTitle" class="font-bold text-sm text-white">Chat Privado con Wendy</h4>
+                                <p class="text-[11px] text-slate-400">Canal directo 1 a 1 aislado de otros empleados</p>
+                            </div>
+                        </div>
+                        <div id="ownerChatContainer" class="flex-1 p-4 overflow-y-auto space-y-3 bg-slate-900/60"></div>
+                        <form onsubmit="handleSendOwnerChatMessage(event)" class="p-3 bg-slate-950 border-t border-slate-800 flex items-center gap-2">
+                            <input type="text" id="ownerChatInput" placeholder="Escribe un mensaje..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500">
+                            <button type="submit" class="w-10 h-10 bg-teal-600 hover:bg-teal-500 text-white rounded-xl flex items-center justify-center">
+                                <i class="fa-solid fa-paper-plane text-xs"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- TAB: OPCIONES -->
+                <div id="ownerTabContent-settings" class="owner-tab-content hidden space-y-6">
+                    <div class="bg-slate-800 rounded-3xl p-6 border border-slate-700 shadow-lg space-y-6">
+                        <h3 class="text-base font-bold text-white border-b border-slate-700 pb-3 flex items-center gap-2">
+                            <i class="fa-solid fa-sliders text-teal-400"></i> Ajustes y Seguridad
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-700/80 space-y-3">
+                                <h4 class="text-xs font-bold text-teal-400 uppercase">Código del Hogar</h4>
+                                <p class="text-xs text-slate-400">Código para identificar tu casa en varios dispositivos.</p>
+                                <div class="flex gap-2">
+                                    <input type="text" id="settingsHouseholdCode" class="flex-1 font-mono uppercase font-bold bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+                                    <button onclick="saveSettingsHouseholdCode()" class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs">Cambiar</button>
+                                </div>
+                            </div>
+                            <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-700/80 space-y-3">
+                                <h4 class="text-xs font-bold text-amber-400 uppercase">PIN de Propietarios</h4>
+                                <p class="text-xs text-slate-400">Clave para acceder a este panel de administración.</p>
+                                <div class="flex gap-2">
+                                    <input type="password" id="settingsOwnerPin" placeholder="PIN (ej. 1234)" class="flex-1 font-mono font-bold bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+                                    <button onclick="saveSettingsOwnerPin()" class="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs">Guardar PIN</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+
+            <!-- VISTA 2: TABLET COCINA (APAISADO 2 COLUMNAS) -->
+            <div id="viewTablet" class="space-y-6 hidden">
+
+                <!-- PANTALLA SELECCIÓN DE EMPLEADA -->
+                <div id="tabletEmployeeSelectorWrapper" class="space-y-6 max-w-4xl mx-auto py-4">
+                    <div class="text-center space-y-2">
+                        <span class="px-3.5 py-1.5 bg-teal-500/10 text-teal-400 border border-teal-500/30 text-xs font-bold rounded-full inline-flex items-center gap-2">
+                            <i class="fa-solid fa-tablet-screen-button"></i> Tablet Cocina - Selecciona tu nombre para fichar
+                        </span>
+                        <h2 class="text-2xl sm:text-3xl font-black text-white">Control Horario & Tareas</h2>
+                    </div>
+                    <div id="tabletEmployeeSelectorGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+                </div>
+
+                <!-- VISTA APAISADA AL AUTENTICAR EMPLEADA -->
+                <div id="tabletActiveEmployeeCard" class="hidden w-full">
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+                        <!-- COLUMNA IZQUIERDA: PERFIL, CRONÓMETRO Y FICHAJE -->
+                        <div class="lg:col-span-5 space-y-4">
+                            <div class="bg-slate-800 rounded-3xl p-5 border border-slate-700 shadow-xl space-y-4">
+                                <div class="flex items-center justify-between border-b border-slate-700/80 pb-3">
+                                    <div class="flex items-center space-x-3">
+                                        <div id="tabletEmpAvatar" class="w-14 h-14 rounded-2xl bg-teal-600 text-white font-black text-2xl flex items-center justify-center shadow-lg">W</div>
+                                        <div>
+                                            <h3 id="tabletEmpName" class="text-xl font-black text-white">Wendy</h3>
+                                            <div id="tabletEmpStatusBadge" class="mt-1 inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-slate-700 text-slate-300">
+                                                <span class="w-2 h-2 rounded-full bg-slate-400"></span> Fuera de servicio
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button onclick="deselectTabletEmployee()" class="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5">
+                                        <i class="fa-solid fa-right-from-bracket"></i> Salir
+                                    </button>
+                                </div>
+
+                                <div class="text-center py-5 bg-slate-950/70 rounded-2xl border border-slate-800 space-y-1 shadow-inner">
+                                    <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tiempo Trabajado Hoy</p>
+                                    <div id="tabletTimerDisplay" class="font-mono text-4xl sm:text-6xl font-black text-teal-400 tracking-tight">00:00:00</div>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-3">
+                                    <button id="btnTabletClockIn" onclick="handleEmpClockIn()" class="py-4 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black text-lg shadow-lg flex items-center justify-center gap-2 touch-action-manipulation">
+                                        <i class="fa-solid fa-play"></i> ENTRADA
+                                    </button>
+                                    <button id="btnTabletClockOut" onclick="triggerEmpClockOutModal()" disabled class="py-4 px-4 rounded-2xl bg-slate-700 opacity-50 cursor-not-allowed text-white font-black text-lg flex items-center justify-center gap-2 touch-action-manipulation">
+                                        <i class="fa-solid fa-stop"></i> SALIDA
+                                    </button>
+                                </div>
+
+                                <div class="bg-slate-900/90 p-4 rounded-2xl border border-slate-700/80 space-y-1">
+                                    <p class="text-[10px] uppercase font-bold text-slate-400">Total Confirmado Este Mes</p>
+                                    <p id="tabletEmpConfirmedHours" class="text-xl font-black text-white">0h 0m</p>
+                                    <div id="tabletEuroWrapper" class="pt-1 border-t border-slate-700/60 mt-1">
+                                        <p class="text-[10px] uppercase font-bold text-teal-400">Importe Acumulado (€)</p>
+                                        <p id="tabletEmpConfirmedPay" class="text-2xl font-black text-teal-400">0,00 €</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- COLUMNA DERECHA: TAREAS Y CHAT PRIVADO -->
+                        <div class="lg:col-span-7 space-y-4">
+                            <div class="bg-slate-800 rounded-3xl p-5 border border-slate-700 shadow-xl space-y-3">
+                                <div class="flex items-center justify-between border-b border-slate-700 pb-2">
+                                    <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                                        <i class="fa-solid fa-list-check text-teal-400"></i> Tareas de Hoy
+                                    </h4>
+                                    <span class="text-[11px] text-slate-400">Toca la casilla al completarla</span>
+                                </div>
+                                <div id="tabletTasksList" class="space-y-2 max-h-56 overflow-y-auto pr-1"></div>
+                            </div>
+
+                            <div class="bg-slate-800 rounded-3xl p-5 border border-slate-700 shadow-xl space-y-3">
+                                <div class="flex items-center justify-between border-b border-slate-700 pb-2">
+                                    <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                                        <i class="fa-solid fa-comments text-teal-400"></i> Mensajes Privados con Propietarios
+                                    </h4>
+                                </div>
+                                <div id="tabletChatQuickBox" class="h-44 overflow-y-auto space-y-2 text-xs bg-slate-900/60 p-3 rounded-2xl border border-slate-700/70"></div>
+                                <form onsubmit="handleSendEmpChatMessage(event)" class="flex gap-2 pt-1">
+                                    <input type="text" id="tabletChatInput" placeholder="Escribe un mensaje..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-teal-500">
+                                    <button type="submit" class="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5">
+                                        <i class="fa-solid fa-paper-plane"></i> Enviar
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div>
+
+
+            <!-- VISTA 3: MÓVIL EMPLEADA -->
+            <div id="viewEmployeeMobile" class="space-y-6 hidden max-w-md mx-auto">
+                <div class="bg-slate-800 rounded-3xl p-6 border border-slate-700 shadow-xl space-y-6">
+                    <div class="flex items-center justify-between border-b border-slate-700 pb-4">
+                        <div class="flex items-center space-x-3">
+                            <div id="mobEmpAvatar" class="w-12 h-12 rounded-2xl bg-teal-600 text-white font-bold text-xl flex items-center justify-center">W</div>
+                            <div>
+                                <h3 id="mobEmpName" class="font-bold text-lg text-white">Wendy</h3>
+                                <p class="text-xs text-slate-400">Móvil Vinculado</p>
+                            </div>
+                        </div>
+                        <div id="mobEmpStatusBadge" class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-700 text-slate-300">Fuera de servicio</div>
+                    </div>
+
+                    <div class="text-center py-6 bg-slate-950/60 rounded-2xl border border-slate-800 space-y-1">
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tiempo de Hoy</p>
+                        <div id="mobTimerDisplay" class="font-mono text-4xl font-black text-teal-400">00:00:00</div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <button id="btnMobClockIn" onclick="handleEmpClockIn()" class="py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-base shadow-lg">ENTRADA</button>
+                        <button id="btnMobClockOut" onclick="triggerEmpClockOutModal()" disabled class="py-4 rounded-2xl bg-slate-700 opacity-50 text-white font-bold text-base">SALIDA</button>
+                    </div>
+
+                    <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-700/80 space-y-1">
+                        <p class="text-[10px] font-bold uppercase text-slate-400">Total Confirmado Este Mes</p>
+                        <p id="mobEmpConfirmedHours" class="text-lg font-bold text-white">0h 0m</p>
+                        <div id="mobEuroWrapper" class="pt-1 border-t border-slate-700/60 mt-1">
+                            <p id="mobEmpConfirmedPay" class="text-xl font-black text-teal-400">0,00 €</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="bg-slate-800 rounded-3xl p-5 border border-slate-700 shadow-lg space-y-3">
+                        <h4 class="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-700 pb-2">
+                            <i class="fa-solid fa-list-check text-teal-400"></i> Tareas de Hoy
+                        </h4>
+                        <div id="mobTasksList" class="space-y-2"></div>
+                    </div>
+
+                    <div class="bg-slate-800 rounded-3xl p-5 border border-slate-700 shadow-lg space-y-3">
+                        <h4 class="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-700 pb-2">
+                            <i class="fa-solid fa-comments text-teal-400"></i> Mensajes Privados
+                        </h4>
+                        <div id="mobChatBox" class="h-40 overflow-y-auto space-y-2 text-xs bg-slate-900/60 p-3 rounded-2xl border border-slate-700"></div>
+                        <form onsubmit="handleSendEmpChatMessage(event)" class="flex gap-2">
+                            <input type="text" id="mobChatInput" placeholder="Escribe un mensaje..." class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none">
+                            <button type="submit" class="px-3 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs">
+                                <i class="fa-solid fa-paper-plane"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+
+    <!-- MODALES DE LA APLICACIÓN -->
+
+    <!-- MODAL: CONTRASEÑA EMPLEADA EN TABLET -->
+    <div id="modalTabletAuthPassword" class="fixed inset-0 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-center">
+            <div id="tabletAuthAvatar" class="w-16 h-16 bg-teal-600 text-white font-black text-2xl rounded-2xl flex items-center justify-center mx-auto shadow-lg">W</div>
+            <div>
+                <h3 id="tabletAuthEmpName" class="text-xl font-bold text-white">Wendy</h3>
+                <p class="text-xs text-slate-400 mt-1">Introduce tu contraseña para acceder</p>
+                <p class="text-[11px] text-teal-400/80 italic mt-0.5">(Por defecto: tu nombre)</p>
+            </div>
+            <form onsubmit="handleTabletPasswordSubmit(event)" class="space-y-4">
+                <input type="password" id="tabletPasswordInput" placeholder="Contraseña..." required class="w-full text-center text-lg font-bold bg-slate-950 border border-slate-700 rounded-2xl py-3 text-white outline-none focus:border-teal-500">
+                <div id="tabletPasswordError" class="text-xs text-rose-400 font-bold hidden">Contraseña incorrecta</div>
+                <div class="flex gap-2">
+                    <button type="button" onclick="closeTabletPasswordModal()" class="flex-1 py-3 bg-slate-800 text-slate-300 rounded-xl text-xs font-bold">Cancelar</button>
+                    <button type="submit" class="flex-1 py-3 bg-teal-600 hover:bg-teal-500 text-white font-black rounded-xl text-xs">Acceder</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: SELECTOR DE ROL -->
+    <div id="modalRoleSelector" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div class="text-center space-y-1">
+                <div class="w-12 h-12 bg-teal-500/20 text-teal-400 rounded-2xl flex items-center justify-center mx-auto text-xl border border-teal-500/30">
+                    <i class="fa-solid fa-sliders"></i>
+                </div>
+                <h3 class="text-lg font-bold text-white">Seleccionar Rol de este Dispositivo</h3>
+                <p class="text-xs text-slate-400">Elige cómo operará esta pantalla</p>
+            </div>
+            <div class="space-y-3">
+                <button onclick="selectAppRole('OWNER')" class="w-full p-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-left transition-all flex items-center justify-between group">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-user-shield"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-sm text-white">Propietarios (Tú y tu mujer)</h4>
+                            <p class="text-xs text-slate-400">Validar fichajes, nómina y asignar tareas (PIN 1234)</p>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right text-slate-500 group-hover:text-white text-xs"></i>
+                </button>
+                <button onclick="selectAppRole('TABLET')" class="w-full p-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-left transition-all flex items-center justify-between group">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-tablet-screen-button"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-sm text-white">Tablet Cocina (Modo Apaisado)</h4>
+                            <p class="text-xs text-slate-400">Pantalla fija de pared con clave de empleada</p>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right text-slate-500 group-hover:text-white text-xs"></i>
+                </button>
+                <button onclick="selectAppRole('EMPLOYEE_MOBILE')" class="w-full p-4 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-left transition-all flex items-center justify-between group">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-lg">
+                            <i class="fa-solid fa-mobile-screen-button"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-sm text-white">Móvil Empleada Directo</h4>
+                            <p class="text-xs text-slate-400">Entrada directa al perfil personal</p>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right text-slate-500 group-hover:text-white text-xs"></i>
+                </button>
+            </div>
+            <button onclick="closeRoleSelectorModal()" class="w-full py-2.5 bg-slate-800 text-slate-400 hover:text-white rounded-xl text-xs font-bold">Cancelar</button>
+        </div>
+    </div>
+
+    <!-- MODAL: PIN PROPIETARIO -->
+    <div id="modalPinAuth" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <div class="w-12 h-12 bg-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center mx-auto text-xl border border-amber-500/30">
+                <i class="fa-solid fa-lock"></i>
+            </div>
+            <div class="text-center">
+                <h3 class="text-lg font-bold text-white">Acceso Propietarios</h3>
+                <p class="text-xs text-slate-400">Introduce la contraseña PIN (por defecto 1234)</p>
+            </div>
+            <form onsubmit="handlePinSubmit(event)" class="space-y-4">
+                <input type="password" id="pinAuthInput" placeholder="PIN (ej. 1234)" required class="w-full text-center tracking-widest text-xl font-bold bg-slate-950 border border-slate-700 rounded-2xl py-3 text-white outline-none focus:border-amber-500">
+                <div id="pinAuthError" class="text-xs text-rose-400 text-center hidden font-bold">PIN incorrecto</div>
+                <div class="flex gap-2">
+                    <button type="button" onclick="closePinModal()" class="flex-1 py-2.5 bg-slate-800 text-slate-300 rounded-xl text-xs font-bold">Cancelar</button>
+                    <button type="submit" class="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs">Acceder</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: CONFIRMAR SALIDA -->
+    <div id="modalClockOutConfirm" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-5 text-center">
+            <div class="w-14 h-14 bg-rose-500/20 text-rose-400 rounded-2xl flex items-center justify-center mx-auto text-2xl border border-rose-500/30">
+                <i class="fa-solid fa-person-walking-arrow-right"></i>
+            </div>
+            <div>
+                <h3 class="text-xl font-black text-white">¿Confirmar Salida?</h3>
+                <p class="text-xs text-slate-300 mt-1">¿Deseas cerrar el turno de hoy y enviar el aviso a los propietarios?</p>
+            </div>
+            <div class="grid grid-cols-2 gap-3 pt-2">
+                <button onclick="closeClockOutModal()" class="py-3.5 bg-slate-800 text-slate-300 font-bold rounded-2xl text-xs">Seguir Trabajando</button>
+                <button onclick="confirmEmpClockOut()" class="py-3.5 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-2xl text-xs shadow-lg">Fichar Salida</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: AJUSTAR JORNADA -->
+    <div id="modalAdjustShift" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="text-base font-bold text-white">Ajustar Jornada</h3>
+                <button onclick="closeAdjustShiftModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form onsubmit="handleSaveAdjustedShift(event)" class="space-y-4">
+                <input type="hidden" id="adjustShiftId">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs font-bold text-slate-400 block mb-1">Hora Entrada</label>
+                        <input type="time" id="adjustInTime" required class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-sm text-white font-mono">
+                    </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-400 block mb-1">Hora Salida</label>
+                        <input type="time" id="adjustOutTime" required class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-sm text-white font-mono">
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-slate-400 block mb-1">Observaciones</label>
+                    <input type="text" id="adjustNotes" placeholder="Ej. Olvidó fichar..." class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-xs text-white">
+                </div>
+                <div class="flex gap-2 pt-2">
+                    <button type="button" onclick="handleDeleteShift()" class="px-3 py-2.5 bg-rose-950 text-rose-300 border border-rose-800 rounded-xl text-xs font-bold hover:bg-rose-900"><i class="fa-solid fa-trash"></i></button>
+                    <button type="button" onclick="closeAdjustShiftModal()" class="flex-1 py-2.5 bg-slate-800 text-slate-300 rounded-xl text-xs font-bold">Cancelar</button>
+                    <button type="submit" class="flex-1 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs">Guardar & Validar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: GESTIÓN DE EMPLEADAS -->
+    <div id="modalEmployeeManager" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-users-gear text-teal-400"></i> Perfiles de Empleadas
+                </h3>
+                <button onclick="closeEmployeeManagerModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="managerEmpList" class="space-y-3 max-h-60 overflow-y-auto pr-1"></div>
+            <button onclick="openEmployeeFormModal(null)" class="w-full py-3 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2">
+                <i class="fa-solid fa-user-plus"></i> Añadir Nueva Empleada
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL: CREAR/EDITAR EMPLEADA -->
+    <div id="modalEmployeeForm" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <h3 id="empFormTitle" class="text-base font-bold text-white">Editar Empleada</h3>
+            <form onsubmit="handleSaveEmployee(event)" class="space-y-3 text-xs">
+                <input type="hidden" id="empFormId">
+                <div>
+                    <label class="font-bold text-slate-300 block mb-1">Nombre Completo</label>
+                    <input type="text" id="empFormName" required class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white">
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="font-bold text-slate-300 block mb-1">Tarifa (€/hora)</label>
+                        <input type="number" step="0.25" min="0" id="empFormRate" required class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white">
+                    </div>
+                    <div>
+                        <label class="font-bold text-slate-300 block mb-1">Horas/día contrato</label>
+                        <input type="number" step="0.5" min="1" max="14" id="empFormContract" required class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white">
+                    </div>
+                </div>
+                <div>
+                    <label class="font-bold text-teal-400 block mb-1">Contraseña Tablet (Por defecto: Nombre)</label>
+                    <input type="text" id="empFormPassword" required class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white">
+                </div>
+                <div class="flex gap-2 pt-2">
+                    <button type="button" onclick="closeEmployeeFormModal()" class="flex-1 py-2.5 bg-slate-800 text-slate-300 rounded-xl font-bold">Cancelar</button>
+                    <button type="submit" class="flex-1 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl shadow-md">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: AÑADIR TAREA ESPECIAL -->
+    <div id="modalAddTask" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            <h3 class="text-base font-bold text-white">Añadir Tarea Especial</h3>
+            <form onsubmit="handleSaveTask(event)" class="space-y-3 text-xs">
+                <div>
+                    <label class="font-bold text-slate-300 block mb-1">Descripción de la Tarea</label>
+                    <input type="text" id="taskFormTitle" required placeholder="Ej. Cambiar sábanas habitación invitados..." class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white">
+                </div>
+                <div>
+                    <label class="font-bold text-slate-300 block mb-1">Prioridad</label>
+                    <select id="taskFormPriority" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-white">
+                        <option value="NORMAL">Normal</option>
+                        <option value="MEDIUM">Media</option>
+                        <option value="HIGH">Alta Prioridad</option>
+                    </select>
+                </div>
+                <div class="flex gap-2 pt-2">
+                    <button type="button" onclick="closeAddTaskModal()" class="flex-1 py-2.5 bg-slate-800 text-slate-300 rounded-xl font-bold">Cancelar</button>
+                    <button type="submit" class="flex-1 py-2.5 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl">Crear Tarea</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: AVISO GENÉRICO -->
+    <div id="modalNotice" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 hidden p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-center">
+            <div id="noticeIcon" class="w-12 h-12 bg-teal-500/20 text-teal-400 rounded-2xl flex items-center justify-center mx-auto text-xl border border-teal-500/30">
+                <i class="fa-solid fa-circle-info"></i>
+            </div>
+            <div>
+                <h3 id="noticeTitle" class="text-base font-bold text-white">Aviso</h3>
+                <p id="noticeMessage" class="text-xs text-slate-300 mt-1 whitespace-pre-line">Mensaje...</p>
+            </div>
+            <button onclick="closeNoticeModal()" class="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl text-xs">Entendido</button>
+        </div>
+    </div>
+
+
+    <!-- JAVASCRIPT COMPLETO SINO DEPENDENCIAS COMPLICADAS -->
+    <script>
+        // ESTADO GLOBAL DE LA APLICACIÓN
+        window.appState = {
+            role: localStorage.getItem('hc_role') || 'TABLET',
+            householdCode: (localStorage.getItem('hc_household_code') || 'HOGAR-2026').trim().toUpperCase(),
+            ownerPin: localStorage.getItem('hc_owner_pin') || '1234',
+            isOwnerAuthenticated: false,
+            showEuroToEmployee: localStorage.getItem('hc_show_euro') !== 'false',
+            selectedEmployeeId: null,
+            pendingTabletEmpId: null,
+            selectedOwnerTab: 'validation',
+            selectedMonth: new Date().getMonth(),
+            selectedYear: new Date().getFullYear(),
+            employees: [],
+            shifts: [],
+            tasks: [],
+            messages: [],
+            paidHistory: []
+        };
+
+        let liveTimerInterval = null;
+
+        // INICIALIZACIÓN DE LA APLICACIÓN
+        function initApp() {
+            loadLocalStorageData();
+            renderApp();
+            
+            // Iniciar intervalo para el temporizador de tiempo en vivo
+            if (liveTimerInterval) clearInterval(liveTimerInterval);
+            liveTimerInterval = setInterval(updateLiveTimers, 1000);
+        }
+
+        function loadLocalStorageData() {
+            const code = window.appState.householdCode;
+            const saved = localStorage.getItem(`hc_data_${code}`);
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    window.appState.employees = parsed.employees || [];
+                    window.appState.shifts = parsed.shifts || [];
+                    window.appState.tasks = parsed.tasks || [];
+                    window.appState.messages = parsed.messages || [];
+                    window.appState.paidHistory = parsed.paidHistory || [];
+                } catch(e) {}
+            }
+
+            // Datos iniciales por defecto si está vacío
+            if (window.appState.employees.length === 0) {
+                window.appState.employees = [
+                    { id: 'emp-wendy', name: 'Wendy', password: 'Wendy', hourlyRate: 10.50, contractedHoursPerDay: 4, activeClockIn: null }
+                ];
+                window.appState.tasks = [
+                    { id: 't-1', employeeId: 'emp-wendy', title: 'Planchar camisas armario principal', priority: 'HIGH', completed: false }
+                ];
+                window.appState.messages = [
+                    { id: 'm-1', employeeId: 'emp-wendy', senderRole: 'Propietario', text: '¡Hola Wendy! Recuerda revisar la lista de compras.', timestamp: '09:00', createdAt: Date.now() }
+                ];
+                saveLocalStorage();
+            }
+
+            if (!window.appState.selectedEmployeeId && window.appState.employees.length > 0 && window.appState.role !== 'TABLET') {
+                window.appState.selectedEmployeeId = window.appState.employees[0].id;
+            }
+        }
+
+        function saveLocalStorage() {
+            const code = window.appState.householdCode;
+            localStorage.setItem(`hc_data_${code}`, JSON.stringify({
+                employees: window.appState.employees,
+                shifts: window.appState.shifts,
+                tasks: window.appState.tasks,
+                messages: window.appState.messages,
+                paidHistory: window.appState.paidHistory
+            }));
+        }
+
+        // CONTROL DE VISTAS Y RENDERIZADO PRINCIPAL
+        function renderApp() {
+            document.getElementById('headerHouseholdCode').innerText = window.appState.householdCode;
+            const roleBadgeText = document.getElementById('roleBadgeText');
+
+            // Ocultar todas las vistas
+            document.getElementById('viewOwner').classList.add('hidden');
+            document.getElementById('viewTablet').classList.add('hidden');
+            document.getElementById('viewEmployeeMobile').classList.add('hidden');
+
+            const currentRole = window.appState.role;
+
+            if (currentRole === 'OWNER') {
+                roleBadgeText.innerText = 'Rol: Propietarios';
+                if (!window.appState.isOwnerAuthenticated) {
+                    openPinModal();
+                } else {
+                    document.getElementById('viewOwner').classList.remove('hidden');
+                    renderOwnerPanel();
+                }
+            } else if (currentRole === 'TABLET') {
+                roleBadgeText.innerText = 'Rol: Tablet Cocina';
+                document.getElementById('viewTablet').classList.remove('hidden');
+                renderTabletView();
+            } else if (currentRole === 'EMPLOYEE_MOBILE') {
+                roleBadgeText.innerText = 'Rol: Móvil Empleada';
+                document.getElementById('viewEmployeeMobile').classList.remove('hidden');
+                renderMobileEmployeeView();
+            }
+        }
+
+        // --- LÓGICA DEL PANEL DE PROPIETARIOS ---
+        function renderOwnerPanel() {
+            // Renderizar selector de empleadas (Pills)
+            const pillsContainer = document.getElementById('ownerEmployeePills');
+            pillsContainer.innerHTML = '';
+            window.appState.employees.forEach(emp => {
+                const active = emp.id === window.appState.selectedEmployeeId;
+                const btn = document.createElement('button');
+                btn.className = `px-3 py-1 rounded-xl text-xs font-bold transition-all ${active ? 'bg-teal-500 text-slate-950 shadow-md' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`;
+                btn.innerText = emp.name;
+                btn.onclick = () => {
+                    window.appState.selectedEmployeeId = emp.id;
+                    renderApp();
+                };
+                pillsContainer.appendChild(btn);
+            });
+
+            const activeEmp = getSelectedEmployee();
+            if (!activeEmp) return;
+
+            document.getElementById('ownerActiveEmpAvatar').innerText = activeEmp.name.charAt(0).toUpperCase();
+            document.getElementById('ownerActiveEmpName').innerText = activeEmp.name;
+            document.getElementById('ownerActiveEmpContract').innerText = `Jornada: ${activeEmp.contractedHoursPerDay}h/día · Tarifa: ${activeEmp.hourlyRate.toFixed(2)} €/h`;
+
+            // Badge de estado de fichaje activo
+            const statusBadge = document.getElementById('ownerActiveEmpStatusBadge');
+            if (activeEmp.activeClockIn) {
+                statusBadge.className = "mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+                statusBadge.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span> Trabajando ahora`;
+            } else {
+                statusBadge.className = "mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-slate-700 text-slate-300";
+                statusBadge.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-slate-400"></span> Fuera de servicio`;
+            }
+
+            // Alerta de horas extra (>1h sobre jornada contractual)
+            const overtimeBanner = document.getElementById('overtimeAlertBanner');
+            if (activeEmp.activeClockIn) {
+                const diffHours = (Date.now() - activeEmp.activeClockIn) / 3600000;
+                if (diffHours > (activeEmp.contractedHoursPerDay + 1)) {
+                    document.getElementById('overtimeAlertText').innerText = `${activeEmp.name} lleva más de 1 hora acumulada sobre su jornada normal (${activeEmp.contractedHoursPerDay}h) sin fichar salida.`;
+                    overtimeBanner.classList.remove('hidden');
+                } else {
+                    overtimeBanner.classList.add('hidden');
+                }
+            } else {
+                overtimeBanner.classList.add('hidden');
+            }
+
+            // Renderizar la pestaña seleccionada
+            const tabs = ['validation', 'calendar', 'tasks', 'chat', 'settings'];
+            tabs.forEach(t => {
+                const tabBtn = document.getElementById(`ownerTab-${t}`);
+                const tabContent = document.getElementById(`ownerTabContent-${t}`);
+                if (t === window.appState.selectedOwnerTab) {
+                    tabBtn.className = "owner-tab px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-teal-600 text-white flex items-center gap-2 transition-all shadow-md";
+                    tabContent.classList.remove('hidden');
+                } else {
+                    tabBtn.className = "owner-tab px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 flex items-center gap-2 transition-all";
+                    tabContent.classList.add('hidden');
+                }
+            });
+
+            // Badge numérico de pendientes de validación
+            const pendingShifts = window.appState.shifts.filter(s => s.status === 'PENDING');
+            const pendingBadge = document.getElementById('pendingValidationBadge');
+            if (pendingShifts.length > 0) {
+                pendingBadge.innerText = pendingShifts.length;
+                pendingBadge.classList.remove('hidden');
+            } else {
+                pendingBadge.classList.add('hidden');
+            }
+
+            renderPendingShifts();
+            renderOwnerCalendar();
+            renderOwnerTasks();
+            renderOwnerChat();
+            document.getElementById('toggleShowEuroToEmp').checked = window.appState.showEuroToEmployee;
+            document.getElementById('settingsHouseholdCode').value = window.appState.householdCode;
+        }
+
+        function renderPendingShifts() {
+            const list = document.getElementById('pendingShiftsList');
+            const pending = window.appState.shifts.filter(s => s.status === 'PENDING');
+            if (pending.length === 0) {
+                list.innerHTML = `<p class="text-xs text-slate-400 italic py-4 text-center">No hay fichajes pendientes de confirmar.</p>`;
+                return;
+            }
+            list.innerHTML = '';
+            pending.forEach(s => {
+                const emp = window.appState.employees.find(e => e.id === s.employeeId);
+                const empName = emp ? emp.name : 'Empleada';
+                const div = document.createElement('div');
+                div.className = "p-4 bg-slate-900/90 rounded-2xl border border-amber-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3";
+                div.innerHTML = `
+                    <div>
+                        <span class="text-xs font-bold text-amber-400">🟡 Pendiente de Validar · ${empName}</span>
+                        <p class="text-sm font-black text-white mt-0.5">${s.date} · ${s.clockInTime} a ${s.clockOutTime} (${s.hours}h ${s.minutes}m)</p>
+                        ${s.notes ? `<p class="text-[11px] text-slate-400 mt-1 italic">${escapeHTML(s.notes)}</p>` : ''}
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="openAdjustShiftModal('${s.id}')" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700">Ajustar</button>
+                        <button onclick="confirmShift('${s.id}')" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black rounded-xl shadow-md">Confirmar Jornada</button>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        function renderOwnerCalendar() {
+            const emp = getSelectedEmployee();
+            if (!emp) return;
+
+            const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+            document.getElementById('ownerCalendarMonthTitle').innerText = `${months[window.appState.selectedMonth]} ${window.appState.selectedYear}`;
+
+            const monthShifts = window.appState.shifts.filter(s => {
+                if (s.employeeId !== emp.id || s.status !== 'CONFIRMED') return false;
+                const d = new Date(s.timestamp || s.date);
+                return d.getMonth() === window.appState.selectedMonth && d.getFullYear() === window.appState.selectedYear;
+            });
+
+            let totalMinutes = 0;
+            monthShifts.forEach(s => totalMinutes += (s.hours * 60 + s.minutes));
+            const totalHoursDec = totalMinutes / 60;
+            const totalHoursFormatted = `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
+            const totalPayFormatted = (totalHoursDec * emp.hourlyRate).toFixed(2) + ' €';
+
+            document.getElementById('ownerCalTotalHours').innerText = totalHoursFormatted;
+            document.getElementById('ownerCalTotalPay').innerText = totalPayFormatted;
+
+            // Renderizar Grid del Mes
+            const grid = document.getElementById('ownerCalendarGrid');
+            grid.innerHTML = '';
+            const daysInMonth = new Date(window.appState.selectedYear, window.appState.selectedMonth + 1, 0).getDate();
+            const firstDayIndex = (new Date(window.appState.selectedYear, window.appState.selectedMonth, 1).getDay() + 6) % 7;
+
+            for (let i = 0; i < firstDayIndex; i++) {
+                grid.appendChild(document.createElement('div'));
+            }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateStr = `${window.appState.selectedYear}-${String(window.appState.selectedMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const dayShifts = window.appState.shifts.filter(s => s.employeeId === emp.id && s.date === dateStr);
+                const cell = document.createElement('div');
+                cell.className = "bg-slate-900/70 p-2 rounded-xl border border-slate-800 min-h-[64px] flex flex-col justify-between";
+
+                let shiftsHtml = '';
+                dayShifts.forEach(s => {
+                    const isConf = s.status === 'CONFIRMED';
+                    shiftsHtml += `<div class="text-[10px] font-bold px-1.5 py-0.5 rounded ${isConf ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-300'}">${s.hours}h ${s.minutes}m</div>`;
+                });
+
+                cell.innerHTML = `
+                    <div class="text-[11px] font-bold text-slate-400">${day}</div>
+                    <div class="space-y-1">${shiftsHtml}</div>
+                `;
+                grid.appendChild(cell);
+            }
+
+            // Historial de meses cerrados
+            const histList = document.getElementById('paidMonthsHistoryList');
+            histList.innerHTML = '';
+            const empHistory = window.appState.paidHistory.filter(h => h.employeeId === emp.id);
+            if (empHistory.length === 0) {
+                histList.innerHTML = `<p class="text-slate-400 italic">No hay cierres de mes registrados.</p>`;
+            } else {
+                empHistory.forEach(h => {
+                    const item = document.createElement('div');
+                    item.className = "p-3 bg-slate-900 rounded-xl border border-slate-700 flex justify-between items-center";
+                    item.innerHTML = `
+                        <div>
+                            <span class="font-bold text-white">${h.monthName}</span>
+                            <p class="text-slate-400">${h.totalHours} · Pagado el ${h.paidDate}</p>
+                        </div>
+                        <span class="font-black text-emerald-400 text-sm">${h.totalPay}</span>
+                    `;
+                    histList.appendChild(item);
+                });
+            }
+        }
+
+        function renderOwnerTasks() {
+            const emp = getSelectedEmployee();
+            if (!emp) return;
+            const list = document.getElementById('ownerTasksList');
+            list.innerHTML = '';
+            const empTasks = window.appState.tasks.filter(t => t.employeeId === emp.id);
+            if (empTasks.length === 0) {
+                list.innerHTML = `<p class="text-xs text-slate-400 italic py-4 text-center">No hay tareas especiales asignadas para hoy.</p>`;
+                return;
+            }
+            empTasks.forEach(t => {
+                const item = document.createElement('div');
+                item.className = "p-3.5 bg-slate-900 rounded-2xl border border-slate-700/80 flex items-center justify-between gap-3";
+                item.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <input type="checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTaskCompleted('${t.id}')" class="w-4 h-4 rounded text-teal-500 focus:ring-0">
+                        <span class="text-xs font-semibold text-white ${t.completed ? 'line-through text-slate-400' : ''}">${escapeHTML(t.title)}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] px-2 py-0.5 rounded-full font-bold ${t.priority === 'HIGH' ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-700 text-slate-300'}">${t.priority}</span>
+                        <button onclick="deleteTask('${t.id}')" class="text-slate-500 hover:text-rose-400 p-1"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+        }
+
+        function renderOwnerChat() {
+            const emp = getSelectedEmployee();
+            if (!emp) return;
+            document.getElementById('ownerChatEmpTitle').innerText = `Chat Privado con ${emp.name}`;
+            document.getElementById('ownerChatAvatar').innerText = emp.name.charAt(0).toUpperCase();
+
+            const container = document.getElementById('ownerChatContainer');
+            container.innerHTML = '';
+            const msgs = window.appState.messages.filter(m => m.employeeId === emp.id);
+            msgs.forEach(m => {
+                const isOwner = m.senderRole === 'Propietario';
+                const div = document.createElement('div');
+                div.className = `flex flex-col ${isOwner ? 'items-end' : 'items-start'}`;
+                div.innerHTML = `
+                    <div class="max-w-[80%] p-3 rounded-2xl text-xs ${isOwner ? 'bg-teal-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-bl-none'}">
+                        <p class="font-bold text-[10px] opacity-75 mb-0.5">${m.senderRole}</p>
+                        <p class="whitespace-pre-line">${escapeHTML(m.text)}</p>
+                        <p class="text-[9px] opacity-60 text-right mt-1">${m.timestamp}</p>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+            container.scrollTop = container.scrollHeight;
+        }
+
+
+        // --- LÓGICA DE TABLET COCINA ---
+        function renderTabletView() {
+            const selectorGrid = document.getElementById('tabletEmployeeSelectorGrid');
+            const activeCard = document.getElementById('tabletActiveEmployeeCard');
+            const selectorWrapper = document.getElementById('tabletEmployeeSelectorWrapper');
+
+            if (!window.appState.selectedEmployeeId) {
+                // Selección de Tarjeta de Empleada
+                selectorWrapper.classList.remove('hidden');
+                activeCard.classList.add('hidden');
+                selectorGrid.innerHTML = '';
+                window.appState.employees.forEach(emp => {
+                    const card = document.createElement('div');
+                    card.className = "bg-slate-800 hover:bg-slate-700/80 border border-slate-700 rounded-3xl p-6 text-center cursor-pointer transition-all transform hover:-translate-y-1 shadow-xl space-y-4";
+                    card.onclick = () => openTabletPasswordModal(emp.id);
+                    card.innerHTML = `
+                        <div class="w-20 h-20 bg-teal-600 text-white font-black text-3xl rounded-3xl flex items-center justify-center mx-auto shadow-lg shadow-teal-500/20">
+                            ${emp.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-bold text-white">${emp.name}</h3>
+                            <p class="text-xs text-slate-400 mt-1">${emp.activeClockIn ? '🟢 Trabajando' : '⚪ Fuera de servicio'}</p>
+                        </div>
+                        <button class="w-full py-3 bg-teal-500 text-slate-950 font-black rounded-2xl text-sm shadow-md">
+                            Tocar para Fichar
+                        </button>
+                    `;
+                    selectorGrid.appendChild(card);
+                });
+            } else {
+                // Empleada autenticada en Tablet -> Mostrar vista apaisada de 2 columnas
+                selectorWrapper.classList.add('hidden');
+                activeCard.classList.remove('hidden');
+
+                const emp = getSelectedEmployee();
+                if (!emp) return;
+
+                document.getElementById('tabletEmpAvatar').innerText = emp.name.charAt(0).toUpperCase();
+                document.getElementById('tabletEmpName').innerText = emp.name;
+
+                const statusBadge = document.getElementById('tabletEmpStatusBadge');
+                const btnClockIn = document.getElementById('btnTabletClockIn');
+                const btnClockOut = document.getElementById('btnTabletClockOut');
+
+                if (emp.activeClockIn) {
+                    statusBadge.className = "mt-1 inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+                    statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Trabajando ahora`;
+                    btnClockIn.disabled = true;
+                    btnClockIn.className = "py-4 px-4 rounded-2xl bg-slate-700 opacity-50 cursor-not-allowed text-white font-black text-lg flex items-center justify-center gap-2";
+                    btnClockOut.disabled = false;
+                    btnClockOut.className = "py-4 px-4 rounded-2xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-black text-lg shadow-lg flex items-center justify-center gap-2 touch-action-manipulation";
+                } else {
+                    statusBadge.className = "mt-1 inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-slate-700 text-slate-300";
+                    statusBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-slate-400"></span> Fuera de servicio`;
+                    btnClockIn.disabled = false;
+                    btnClockIn.className = "py-4 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black text-lg shadow-lg flex items-center justify-center gap-2 touch-action-manipulation";
+                    btnClockOut.disabled = true;
+                    btnClockOut.className = "py-4 px-4 rounded-2xl bg-slate-700 opacity-50 cursor-not-allowed text-white font-black text-lg flex items-center justify-center gap-2";
+                }
+
+                // Cálculo de acumulados confirmados del mes
+                const monthShifts = window.appState.shifts.filter(s => {
+                    if (s.employeeId !== emp.id || s.status !== 'CONFIRMED') return false;
+                    const d = new Date(s.timestamp || s.date);
+                    return d.getMonth() === new Date().getMonth() && d.getFullYear() === new Date().getFullYear();
+                });
+                let totalMinutes = 0;
+                monthShifts.forEach(s => totalMinutes += (s.hours * 60 + s.minutes));
+                const totalHoursFormatted = `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
+                document.getElementById('tabletEmpConfirmedHours').innerText = totalHoursFormatted;
+
+                const euroWrapper = document.getElementById('tabletEuroWrapper');
+                if (window.appState.showEuroToEmployee) {
+                    euroWrapper.classList.remove('hidden');
+                    document.getElementById('tabletEmpConfirmedPay').innerText = ((totalMinutes / 60) * emp.hourlyRate).toFixed(2) + ' €';
+                } else {
+                    euroWrapper.classList.add('hidden');
+                }
+
+                renderTabletTasks();
+                renderTabletChat();
+            }
+        }
+
+        function renderTabletTasks() {
+            const emp = getSelectedEmployee();
+            if (!emp) return;
+            const container = document.getElementById('tabletTasksList');
+            container.innerHTML = '';
+            const tasks = window.appState.tasks.filter(t => t.employeeId === emp.id);
+            if (tasks.length === 0) {
+                container.innerHTML = `<p class="text-xs text-slate-400 italic py-3">No hay tareas pendientes para hoy.</p>`;
+                return;
+            }
+            tasks.forEach(t => {
+                const item = document.createElement('div');
+                item.className = "p-3 bg-slate-900 rounded-xl border border-slate-700/80 flex items-center space-x-3";
+                item.innerHTML = `
+                    <input type="checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTaskCompleted('${t.id}')" class="w-5 h-5 rounded text-teal-500 focus:ring-0">
+                    <span class="text-xs font-semibold text-white ${t.completed ? 'line-through text-slate-400' : ''}">${escapeHTML(t.title)}</span>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function renderTabletChat() {
+            const emp = getSelectedEmployee();
+            if (!emp) return;
+            const container = document.getElementById('tabletChatQuickBox');
+            container.innerHTML = '';
+            const msgs = window.appState.messages.filter(m => m.employeeId === emp.id);
+            msgs.forEach(m => {
+                const isEmp = m.senderRole === emp.name;
+                const div = document.createElement('div');
+                div.className = `flex flex-col ${isEmp ? 'items-end' : 'items-start'}`;
+                div.innerHTML = `
+                    <div class="max-w-[85%] p-2.5 rounded-xl text-xs ${isEmp ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-200 border border-slate-700'}">
+                        <p class="font-bold text-[9px] opacity-75">${m.senderRole}</p>
+                        <p>${escapeHTML(m.text)}</p>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // --- LÓGICA DE MÓVIL EMPLEADA ---
+        function renderMobileEmployeeView() {
+            const emp = getSelectedEmployee();
+            if (!emp) return;
+            document.getElementById('mobEmpAvatar').innerText = emp.name.charAt(0).toUpperCase();
+            document.getElementById('mobEmpName').innerText = emp.name;
+
+            const btnIn = document.getElementById('btnMobClockIn');
+            const btnOut = document.getElementById('btnMobClockOut');
+            const badge = document.getElementById('mobEmpStatusBadge');
+
+            if (emp.activeClockIn) {
+                badge.className = "px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+                badge.innerText = "Trabajando";
+                btnIn.disabled = true;
+                btnIn.className = "py-4 rounded-2xl bg-slate-700 opacity-50 text-white font-bold text-base";
+                btnOut.disabled = false;
+                btnOut.className = "py-4 rounded-2xl bg-rose-600 text-white font-bold text-base shadow-lg";
+            } else {
+                badge.className = "px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-700 text-slate-300";
+                badge.innerText = "Fuera de servicio";
+                btnIn.disabled = false;
+                btnIn.className = "py-4 rounded-2xl bg-emerald-600 text-white font-bold text-base shadow-lg";
+                btnOut.disabled = true;
+                btnOut.className = "py-4 rounded-2xl bg-slate-700 opacity-50 text-white font-bold text-base";
+            }
+
+            const mobTasks = document.getElementById('mobTasksList');
+            mobTasks.innerHTML = '';
+            window.appState.tasks.filter(t => t.employeeId === emp.id).forEach(t => {
+                const item = document.createElement('div');
+                item.className = "p-3 bg-slate-900 rounded-xl border border-slate-700 flex items-center space-x-3";
+                item.innerHTML = `
+                    <input type="checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTaskCompleted('${t.id}')" class="w-4 h-4 text-teal-500">
+                    <span class="text-xs text-white ${t.completed ? 'line-through text-slate-400' : ''}">${escapeHTML(t.title)}</span>
+                `;
+                mobTasks.appendChild(item);
+            });
+
+            const mobChat = document.getElementById('mobChatBox');
+            mobChat.innerHTML = '';
+            window.appState.messages.filter(m => m.employeeId === emp.id).forEach(m => {
+                const isEmp = m.senderRole === emp.name;
+                const div = document.createElement('div');
+                div.className = `flex flex-col ${isEmp ? 'items-end' : 'items-start'}`;
+                div.innerHTML = `
+                    <div class="max-w-[85%] p-2 rounded-xl text-xs ${isEmp ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-200 border border-slate-700'}">
+                        <p>${escapeHTML(m.text)}</p>
+                    </div>
+                `;
+                mobChat.appendChild(div);
+            });
+            mobChat.scrollTop = mobChat.scrollHeight;
+        }
+
+        // ACTUALIZACIÓN DE CRONÓMETROS EN TIEMPO REAL
+        function updateLiveTimers() {
+            const emp = getSelectedEmployee();
+            let timerStr = "00:00:00";
+            if (emp && emp.activeClockIn) {
+                const elapsedMs = Date.now() - emp.activeClockIn;
+                const sec = Math.floor((elapsedMs / 1000) % 60);
+                const min = Math.floor((elapsedMs / (1000 * 60)) % 60);
+                const hrs = Math.floor(elapsedMs / (1000 * 60 * 60));
+                timerStr = `${String(hrs).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+            }
+
+            const ownerLive = document.getElementById('ownerLiveTimer');
+            if (ownerLive) ownerLive.innerText = timerStr;
+
+            const tabletTimer = document.getElementById('tabletTimerDisplay');
+            if (tabletTimer) tabletTimer.innerText = timerStr;
+
+            const mobTimer = document.getElementById('mobTimerDisplay');
+            if (mobTimer) mobTimer.innerText = timerStr;
+        }
+
+
+        // ACCIONES DE FICHAJE
+        function handleEmpClockIn() {
+            const emp = getSelectedEmployee();
+            if (!emp) return;
+            emp.activeClockIn = Date.now();
+            
+            // Mensaje automático al chat
+            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            window.appState.messages.push({
+                id: 'm-' + Date.now(),
+                employeeId: emp.id,
+                senderRole: emp.name,
+                text: `🟢 Entrada fichada a las ${timeStr}`,
+                timestamp: timeStr,
+                createdAt: Date.now()
+            });
+
+            saveLocalStorage();
+            renderApp();
+            showNoticeModal("Entrada Registrada", `¡Buen día ${emp.name}! Tu tiempo ha empezado a contar.`, "fa-solid fa-circle-check text-emerald-400");
+        }
+
+        function triggerEmpClockOutModal() {
+            document.getElementById('modalClockOutConfirm').classList.remove('hidden');
+        }
+
+        function closeClockOutModal() {
+            document.getElementById('modalClockOutConfirm').classList.add('hidden');
+        }
+
+        function confirmEmpClockOut() {
+            closeClockOutModal();
+            const emp = getSelectedEmployee();
+            if (!emp || !emp.activeClockIn) return;
+
+            const now = Date.now();
+            const elapsedMs = now - emp.activeClockIn;
+            const totalMin = Math.round(elapsedMs / (1000 * 60));
+            const hours = Math.floor(totalMin / 60);
+            const minutes = totalMin % 60;
+
+            const inDate = new Date(emp.activeClockIn);
+            const outDate = new Date(now);
+            const dateStr = `${inDate.getFullYear()}-${String(inDate.getMonth() + 1).padStart(2, '0')}-${String(inDate.getDate()).padStart(2, '0')}`;
+
+            // Crear registro de turno pendiente
+            window.appState.shifts.push({
+                id: 's-' + Date.now(),
+                employeeId: emp.id,
+                date: dateStr,
+                clockInTime: inDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                clockOutTime: outDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                hours: hours,
+                minutes: minutes,
+                status: 'PENDING',
+                timestamp: now
+            });
+
+            // Restablecer entrada activa
+            emp.activeClockIn = null;
+
+            // Notificación al chat privado
+            const timeStr = outDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            window.appState.messages.push({
+                id: 'm-' + Date.now(),
+                employeeId: emp.id,
+                senderRole: emp.name,
+                text: `🔴 Salida fichada a las ${timeStr} · Duración: ${hours}h ${minutes}m (Pendiente de confirmar por propietarios)`,
+                timestamp: timeStr,
+                createdAt: Date.now()
+            });
+
+            saveLocalStorage();
+            renderApp();
+            showNoticeModal("Salida Registrada", "Has fichado tu salida correctamente. ¡Que tengas buen día!", "fa-solid fa-circle-check text-teal-400");
+        }
+
+
+        // GESTIÓN DE ROLES Y AUTENTICACIÓN
+        function selectAppRole(role) {
+            closeRoleSelectorModal();
+            if (role === 'OWNER') {
+                window.appState.role = 'OWNER';
+                localStorage.setItem('hc_role', 'OWNER');
+                if (!window.appState.isOwnerAuthenticated) openPinModal();
+                else renderApp();
+            } else {
+                window.appState.role = role;
+                localStorage.setItem('hc_role', role);
+                renderApp();
+            }
+        }
+
+        function openRoleSelectorModal() { document.getElementById('modalRoleSelector').classList.remove('hidden'); }
+        function closeRoleSelectorModal() { document.getElementById('modalRoleSelector').classList.add('hidden'); }
+
+        function openPinModal() {
+            document.getElementById('pinAuthInput').value = '';
+            document.getElementById('pinAuthError').classList.add('hidden');
+            document.getElementById('modalPinAuth').classList.remove('hidden');
+        }
+        function closePinModal() { document.getElementById('modalPinAuth').classList.add('hidden'); }
+        function handlePinSubmit(e) {
+            e.preventDefault();
+            const val = document.getElementById('pinAuthInput').value.trim();
+            if (val === window.appState.ownerPin) {
+                window.appState.isOwnerAuthenticated = true;
+                closePinModal();
+                renderApp();
+            } else {
+                document.getElementById('pinAuthError').classList.remove('hidden');
+            }
+        }
+
+        function openTabletPasswordModal(empId) {
+            window.appState.pendingTabletEmpId = empId;
+            const emp = window.appState.employees.find(e => e.id === empId);
+            if (!emp) return;
+            document.getElementById('tabletAuthAvatar').innerText = emp.name.charAt(0).toUpperCase();
+            document.getElementById('tabletAuthEmpName').innerText = emp.name;
+            document.getElementById('tabletPasswordInput').value = '';
+            document.getElementById('tabletPasswordError').classList.add('hidden');
+            document.getElementById('modalTabletAuthPassword').classList.remove('hidden');
+        }
+        function closeTabletPasswordModal() { document.getElementById('modalTabletAuthPassword').classList.add('hidden'); }
+        function handleTabletPasswordSubmit(e) {
+            e.preventDefault();
+            const inputPass = document.getElementById('tabletPasswordInput').value.trim();
+            const emp = window.appState.employees.find(e => e.id === window.appState.pendingTabletEmpId);
+            if (emp && inputPass.toLowerCase() === (emp.password || emp.name).toLowerCase()) {
+                window.appState.selectedEmployeeId = emp.id;
+                closeTabletPasswordModal();
+                renderApp();
+            } else {
+                document.getElementById('tabletPasswordError').classList.remove('hidden');
+            }
+        }
+        function deselectTabletEmployee() {
+            window.appState.selectedEmployeeId = null;
+            renderApp();
+        }
+
+        // OTROS MANEJADORES DE INTERFAZ
+        function switchOwnerTab(tab) { window.appState.selectedOwnerTab = tab; renderApp(); }
+        
+        function confirmShift(shiftId) {
+            const shift = window.appState.shifts.find(s => s.id === shiftId);
+            if (shift) {
+                shift.status = 'CONFIRMED';
+                saveLocalStorage();
+                renderApp();
+            }
+        }
+
+        function openAdjustShiftModal(shiftId) {
+            const shift = window.appState.shifts.find(s => s.id === shiftId);
+            if (!shift) return;
+            document.getElementById('adjustShiftId').value = shift.id;
+            document.getElementById('adjustInTime').value = shift.clockInTime;
+            document.getElementById('adjustOutTime').value = shift.clockOutTime;
+            document.getElementById('adjustNotes').value = shift.notes || '';
+            document.getElementById('modalAdjustShift').classList.remove('hidden');
+        }
+        function closeAdjustShiftModal() { document.getElementById('modalAdjustShift').classList.add('hidden'); }
+        function handleSaveAdjustedShift(e) {
+            e.preventDefault();
+            const shiftId = document.getElementById('adjustShiftId').value;
+            const shift = window.appState.shifts.find(s => s.id === shiftId);
+            if (shift) {
+                const inT = document.getElementById('adjustInTime').value;
+                const outT = document.getElementById('adjustOutTime').value;
+                const [inH, inM] = inT.split(':').map(Number);
+                const [outH, outM] = outT.split(':').map(Number);
+                let diffM = (outH * 60 + outM) - (inH * 60 + inM);
+                if (diffM < 0) diffM += 24 * 60;
+
+                shift.clockInTime = inT;
+                shift.clockOutTime = outT;
+                shift.hours = Math.floor(diffM / 60);
+                shift.minutes = diffM % 60;
+                shift.notes = document.getElementById('adjustNotes').value;
+                shift.status = 'CONFIRMED';
+
+                saveLocalStorage();
+                renderApp();
+                closeAdjustShiftModal();
+            }
+        }
+        function handleDeleteShift() {
+            const shiftId = document.getElementById('adjustShiftId').value;
+            window.appState.shifts = window.appState.shifts.filter(s => s.id !== shiftId);
+            saveLocalStorage();
+            renderApp();
+            closeAdjustShiftModal();
+        }
+
+        function toggleTaskCompleted(taskId) {
+            const t = window.appState.tasks.find(x => x.id === taskId);
+            if (t) {
+                t.completed = !t.completed;
+                saveLocalStorage();
+                renderApp();
+            }
+        }
+
+        function deleteTask(taskId) {
+            window.appState.tasks = window.appState.tasks.filter(t => t.id !== taskId);
+            saveLocalStorage();
+            renderApp();
+        }
+
+        function openAddTaskModal() { document.getElementById('modalAddTask').classList.remove('hidden'); }
+        function closeAddTaskModal() { document.getElementById('modalAddTask').classList.add('hidden'); }
+        function handleSaveTask(e) {
+            e.preventDefault();
+            const emp = getSelectedEmployee();
+            if (!emp) return;
+            window.appState.tasks.push({
+                id: 't-' + Date.now(),
+                employeeId: emp.id,
+                title: document.getElementById('taskFormTitle').value.trim(),
+                priority: document.getElementById('taskFormPriority').value,
+                completed: false
+            });
+            document.getElementById('taskFormTitle').value = '';
+            saveLocalStorage();
+            renderApp();
+            closeAddTaskModal();
+        }
+
+        function handleSendOwnerChatMessage(e) {
+            e.preventDefault();
+            const input = document.getElementById('ownerChatInput');
+            const txt = input.value.trim();
+            const emp = getSelectedEmployee();
+            if (!txt || !emp) return;
+            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            window.appState.messages.push({
+                id: 'm-' + Date.now(),
+                employeeId: emp.id,
+                senderRole: 'Propietario',
+                text: txt,
+                timestamp: timeStr,
+                createdAt: Date.now()
+            });
+            input.value = '';
+            saveLocalStorage();
+            renderApp();
+        }
+
+        function handleSendEmpChatMessage(e) {
+            e.preventDefault();
+            const emp = getSelectedEmployee();
+            if (!emp) return;
+            const input = document.getElementById(window.appState.role === 'TABLET' ? 'tabletChatInput' : 'mobChatInput');
+            const txt = input.value.trim();
+            if (!txt) return;
+            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            window.appState.messages.push({
+                id: 'm-' + Date.now(),
+                employeeId: emp.id,
+                senderRole: emp.name,
+                text: txt,
+                timestamp: timeStr,
+                createdAt: Date.now()
+            });
+            input.value = '';
+            saveLocalStorage();
+            renderApp();
+        }
+
+        function openEmployeeManagerModal() {
+            const list = document.getElementById('managerEmpList');
+            list.innerHTML = '';
+            window.appState.employees.forEach(emp => {
+                const item = document.createElement('div');
+                item.className = "p-3 bg-slate-950 rounded-2xl border border-slate-800 flex items-center justify-between";
+                item.innerHTML = `
+                    <div>
+                        <span class="font-bold text-white text-xs">${emp.name}</span>
+                        <p class="text-[11px] text-slate-400">${emp.hourlyRate} €/h · ${emp.contractedHoursPerDay}h/día · Clave: ${emp.password || emp.name}</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="openEmployeeFormModal('${emp.id}')" class="text-teal-400 hover:text-teal-300 p-1 text-xs"><i class="fa-solid fa-pen"></i></button>
+                    </div>
+                `;
+                list.appendChild(item);
+            });
+            document.getElementById('modalEmployeeManager').classList.remove('hidden');
+        }
+        function closeEmployeeManagerModal() { document.getElementById('modalEmployeeManager').classList.add('hidden'); }
+
+        function openEmployeeFormModal(empId) {
+            if (empId) {
+                const emp = window.appState.employees.find(e => e.id === empId);
+                document.getElementById('empFormTitle').innerText = "Editar Empleada";
+                document.getElementById('empFormId').value = emp.id;
+                document.getElementById('empFormName').value = emp.name;
+                document.getElementById('empFormRate').value = emp.hourlyRate;
+                document.getElementById('empFormContract').value = emp.contractedHoursPerDay;
+                document.getElementById('empFormPassword').value = emp.password || emp.name;
+            } else {
+                document.getElementById('empFormTitle').innerText = "Nueva Empleada";
+                document.getElementById('empFormId').value = '';
+                document.getElementById('empFormName').value = '';
+                document.getElementById('empFormRate').value = '10.50';
+                document.getElementById('empFormContract').value = '4';
+                document.getElementById('empFormPassword').value = '';
+            }
+            document.getElementById('modalEmployeeForm').classList.remove('hidden');
+        }
+        function closeEmployeeFormModal() { document.getElementById('modalEmployeeForm').classList.add('hidden'); }
+
+        function handleSaveEmployee(e) {
+            e.preventDefault();
+            const id = document.getElementById('empFormId').value;
+            const name = document.getElementById('empFormName').value.trim();
+            const rate = parseFloat(document.getElementById('empFormRate').value);
+            const contract = parseFloat(document.getElementById('empFormContract').value);
+            const pass = document.getElementById('empFormPassword').value.trim() || name;
+
+            if (id) {
+                const emp = window.appState.employees.find(e => e.id === id);
+                if (emp) {
+                    emp.name = name;
+                    emp.hourlyRate = rate;
+                    emp.contractedHoursPerDay = contract;
+                    emp.password = pass;
+                }
+            } else {
+                const newId = 'emp-' + Date.now();
+                window.appState.employees.push({
+                    id: newId,
+                    name: name,
+                    hourlyRate: rate,
+                    contractedHoursPerDay: contract,
+                    password: pass,
+                    activeClockIn: null
+                });
+                window.appState.selectedEmployeeId = newId;
+            }
+            saveLocalStorage();
+            closeEmployeeFormModal();
+            openEmployeeManagerModal();
+            renderApp();
+        }
+
+        function handleToggleEuroVisibility(val) {
+            window.appState.showEuroToEmployee = val;
+            localStorage.setItem('hc_show_euro', val);
+            saveLocalStorage();
+            renderApp();
+        }
+
+        function changeOwnerMonth(delta) {
+            let m = window.appState.selectedMonth + delta;
+            let y = window.appState.selectedYear;
+            if (m < 0) { m = 11; y--; }
+            else if (m > 11) { m = 0; y++; }
+            window.appState.selectedMonth = m;
+            window.appState.selectedYear = y;
+            renderApp();
+        }
+
+        function closeAndPayMonth() {
+            const emp = getSelectedEmployee();
+            if (!emp) return;
+            const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+            const curMonthName = `${months[window.appState.selectedMonth]} ${window.appState.selectedYear}`;
+
+            const totalHoursStr = document.getElementById('ownerCalTotalHours').innerText;
+            const totalPayStr = document.getElementById('ownerCalTotalPay').innerText;
+
+            window.appState.paidHistory.push({
+                id: 'p-' + Date.now(),
+                employeeId: emp.id,
+                monthName: curMonthName,
+                totalHours: totalHoursStr,
+                totalPay: totalPayStr,
+                paidDate: new Date().toLocaleDateString()
+            });
+
+            saveLocalStorage();
+            renderApp();
+            showNoticeModal("Mes Liquidado", `Se ha cerrado el mes de ${curMonthName} y guardado en el historial.`, "fa-solid fa-file-invoice-dollar text-emerald-400");
+        }
+
+        function saveSettingsHouseholdCode() {
+            const val = document.getElementById('settingsHouseholdCode').value.trim().toUpperCase();
+            if (val) {
+                window.appState.householdCode = val;
+                localStorage.setItem('hc_household_code', val);
+                saveLocalStorage();
+                renderApp();
+                showNoticeModal("Código Actualizado", `Nuevo Código de Hogar: ${val}`, "fa-solid fa-circle-check text-teal-400");
+            }
+        }
+
+        function saveSettingsOwnerPin() {
+            const val = document.getElementById('settingsOwnerPin').value.trim();
+            if (val) {
+                window.appState.ownerPin = val;
+                localStorage.setItem('hc_owner_pin', val);
+                document.getElementById('settingsOwnerPin').value = '';
+                showNoticeModal("PIN Guardado", "El PIN de acceso a Propietarios ha sido modificado.", "fa-solid fa-key text-amber-400");
+            }
+        }
+
+        function getSelectedEmployee() {
+            let emp = window.appState.employees.find(e => e.id === window.appState.selectedEmployeeId);
+            if (!emp && window.appState.employees.length > 0 && window.appState.role !== 'TABLET') {
+                emp = window.appState.employees[0];
+                window.appState.selectedEmployeeId = emp.id;
+            }
+            return emp;
+        }
+
+        function showNoticeModal(title, msg, iconClass = "fa-solid fa-circle-info text-teal-400") {
+            document.getElementById('noticeTitle').innerText = title;
+            document.getElementById('noticeMessage').innerText = msg;
+            const iconEl = document.getElementById('noticeIcon');
+            iconEl.className = `w-12 h-12 rounded-2xl flex items-center justify-center mx-auto text-xl bg-slate-800 ${iconClass}`;
+            document.getElementById('modalNotice').classList.remove('hidden');
+        }
+        function closeNoticeModal() { document.getElementById('modalNotice').classList.add('hidden'); }
+
+        function escapeHTML(str) {
+            if (!str) return '';
+            return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
+        }
+
+        // Ejecutar inicialización al cargar el documento
+        document.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
