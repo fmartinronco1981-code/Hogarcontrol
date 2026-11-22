@@ -2,1924 +2,1862 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HogarSync — Control Horario, Tareas y Chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>HogarControl — Horarios y Pagos</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
-          screens: {
-            landscape: { raw: '(orientation: landscape)' },
-          },
-        },
-      },
+          colors: {
+            brand: {
+              50: '#f0fdfa',
+              100: '#ccfbf1',
+              500: '#0d9488',
+              600: '#0f766e',
+              700: '#115e59',
+              900: '#134e4a'
+            },
+            warm: {
+              50: '#faf8f5',
+              100: '#f3efe8',
+              200: '#e6dfd3'
+            }
+          }
+        }
+      }
     };
   </script>
   <style>
-    @keyframes pulse-glow {
-      0%, 100% {
-        box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.75);
-        transform: scale(1);
-      }
-      50% {
-        box-shadow: 0 0 0 10px rgba(234, 179, 8, 0);
-        transform: scale(1.03);
-      }
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      background-color: #faf8f5;
+      color: #1e293b;
+      -webkit-tap-highlight-color: transparent;
     }
-    .chat-alert-glow {
-      animation: pulse-glow 1.35s infinite;
+    @keyframes tabFlash {
+      0%, 100% { background-color: #fef3c7; color: #92400e; transform: scale(1); }
+      50% { background-color: #f59e0b; color: #ffffff; transform: scale(1.03); }
     }
-    @media (orientation: landscape) and (min-width: 640px) {
-      .employee-main-grid {
-        display: grid;
-        grid-template-columns: 1.05fr 0.95fr;
-        gap: 1.25rem;
-        align-items: start;
-      }
+    .tab-alert {
+      animation: tabFlash 0.9s ease-in-out infinite;
+    }
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
     }
   </style>
 </head>
-<body class="bg-slate-100 text-slate-800 min-h-screen antialiased selection:bg-indigo-600 selection:text-white">
-  <div id="app" class="min-h-screen flex flex-col"></div>
+<body class="min-h-screen flex flex-col">
 
-  <script>
-    const STORAGE_KEY = 'hogarsync_v2_state';
-    const CLOUD_CONFIG_KEY = 'hogarsync_v2_cloud';
-
-    const DEFAULT_STATE = {
-      householdCode: 'HOGAR-8421',
-      masterPassword: 'admin',
-      employees: [
-        {
-          id: 'emp_maria',
-          name: 'María',
-          password: '1234',
-          dailyHours: 6,
-          rates: [
-            { rate: 10, startDate: '2026-01-01' }
-          ]
-        }
-      ],
-      shifts: [],
-      tasks: [],
-      messages: [],
-      closedMonths: {},
-      lastUpdated: Date.now()
-    };
-
-    function getTodayISO() {
-      const now = new Date();
-      const y = now.getFullYear();
-      const m = String(now.getMonth() + 1).padStart(2, '0');
-      const d = String(now.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    }
-
-    function getMonthKey(dateStr) {
-      return dateStr ? dateStr.slice(0, 7) : getTodayISO().slice(0, 7);
-    }
-
-    function formatTimeHHMM(ms) {
-      if (!ms) return '--:--';
-      const d = new Date(ms);
-      return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-    }
-
-    function formatDurationHM(totalMinutes) {
-      const mins = Math.max(0, Math.floor(totalMinutes));
-      const h = Math.floor(mins / 60);
-      const m = mins % 60;
-      return `${h}h ${String(m).padStart(2, '0')}m`;
-    }
-
-    function formatDurationHMS(ms) {
-      const totalSec = Math.max(0, Math.floor(ms / 1000));
-      const h = Math.floor(totalSec / 3600);
-      const m = Math.floor((totalSec % 3600) / 60);
-      const s = totalSec % 60;
-      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    }
-
-    function getRateForDate(employee, dateStr) {
-      if (!employee || !Array.isArray(employee.rates) || employee.rates.length === 0) {
-        return 10;
-      }
-      const sorted = [...employee.rates].sort((a, b) => a.startDate.localeCompare(b.startDate));
-      let activeRate = sorted[0].rate;
-      for (const r of sorted) {
-        if (r.startDate <= dateStr) {
-          activeRate = Number(r.rate);
-        } else {
-          break;
-        }
-      }
-      return Number(activeRate) || 10;
-    }
-
-    function seedInitialDemoData(state) {
-      if (state.shifts.length > 0 || state.tasks.length > 0 || state.messages.length > 0) {
-        return state;
-      }
-      const today = getTodayISO();
-      const d1 = new Date();
-      d1.setDate(d1.getDate() - 2);
-      const dayMinus2 = d1.toISOString().slice(0, 10);
-
-      const d2 = new Date();
-      d2.setDate(d2.getDate() - 1);
-      const dayMinus1 = d2.toISOString().slice(0, 10);
-
-      state.shifts = [
-        {
-          id: 'sh_demo_1',
-          employeeId: 'emp_maria',
-          date: dayMinus2,
-          startTime: new Date(`${dayMinus2}T09:00:00`).getTime(),
-          endTime: new Date(`${dayMinus2}T14:30:00`).getTime(),
-          minutes: 330,
-          rate: 10,
-          status: 'confirmed',
-          confirmedBy: 'Propietario 1'
-        },
-        {
-          id: 'sh_demo_2',
-          employeeId: 'emp_maria',
-          date: dayMinus1,
-          startTime: new Date(`${dayMinus1}T10:00:00`).getTime(),
-          endTime: new Date(`${dayMinus1}T13:45:00`).getTime(),
-          minutes: 225,
-          rate: 10,
-          status: 'pending',
-          confirmedBy: null
-        }
-      ];
-
-      state.tasks = [
-        {
-          id: 'tk_demo_1',
-          employeeId: 'emp_maria',
-          date: today,
-          title: 'Limpiar cristales del salón y balcón',
-          priority: 'alta',
-          completed: false
-        },
-        {
-          id: 'tk_demo_2',
-          employeeId: 'emp_maria',
-          date: today,
-          title: 'Organizar armario de ropa de abrigo',
-          priority: 'media',
-          completed: false
-        }
-      ];
-
-      state.messages = [
-        {
-          id: 'msg_demo_1',
-          employeeId: 'emp_maria',
-          sender: 'Sistema',
-          text: `Turno confirmado (${dayMinus2}): 5h 30m — 55,00 €`,
-          timestamp: Date.now() - 86400000 * 2,
-          isSystem: true
-        }
-      ];
-
-      return state;
-    }
-
-    function loadCloudConfig() {
-      try {
-        const raw = localStorage.getItem(CLOUD_CONFIG_KEY);
-        return raw ? JSON.parse(raw) : { enabled: false, firebaseDbUrl: '' };
-      } catch {
-        return { enabled: false, firebaseDbUrl: '' };
-      }
-    }
-
-    function saveCloudConfig(cfg) {
-      localStorage.setItem(CLOUD_CONFIG_KEY, JSON.stringify(cfg));
-    }
-
-    function loadLocalState() {
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) {
-          const initial = seedInitialDemoData(structuredClone(DEFAULT_STATE));
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(initial));
-          return initial;
-        }
-        return JSON.parse(raw);
-      } catch {
-        return seedInitialDemoData(structuredClone(DEFAULT_STATE));
-      }
-    }
-
-    let cloudConfig = loadCloudConfig();
-    let appState = loadLocalState();
-    let isSyncingNow = false;
-
-    const urlParams = new URLSearchParams(window.location.search);
-    const paramCode = urlParams.get('hogar');
-    const paramDb = urlParams.get('db');
-    if (paramCode) {
-      appState.householdCode = paramCode.trim().toUpperCase();
-    }
-    if (paramDb) {
-      cloudConfig.firebaseDbUrl = decodeURIComponent(paramDb).replace(/\/+$/, '');
-      cloudConfig.enabled = true;
-      saveCloudConfig(cloudConfig);
-    }
-
-    let ui = {
-      view: 'landing',
-      selectedEmployeeId: appState.employees[0]?.id || null,
-      ownerLabel: 'Propietario 1 (Máster)',
-      editModeUnlocked: false,
-      employeeTab: 'home',
-      ownerTab: 'overview',
-      calendarMonth: getTodayISO().slice(0, 7),
-      selectedCalendarDate: getTodayISO(),
-      toast: null,
-      unreadChatForEmployee: {},
-      lastSeenMessageCount: {},
-      modal: null,
-      authError: ''
-    };
-
-    function showToast(msg, type = 'info') {
-      ui.toast = { msg, type };
-      render();
-      clearTimeout(showToast._timer);
-      showToast._timer = setTimeout(() => {
-        ui.toast = null;
-        render();
-      }, 3200);
-    }
-
-    function hasActiveInputFocus() {
-      const active = document.activeElement;
-      if (!active) return false;
-      const tag = active.tagName;
-      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
-    }
-
-    async function saveState(pushCloud = true) {
-      appState.lastUpdated = Date.now();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
-      if (pushCloud && cloudConfig.enabled && cloudConfig.firebaseDbUrl) {
-        try {
-          await pushToFirebase();
-        } catch {}
-      }
-    }
-
-    function getFirebaseEndpoint() {
-      const base = cloudConfig.firebaseDbUrl.replace(/\/+$/, '');
-      const code = encodeURIComponent(appState.householdCode || 'HOGAR-DEFAULT');
-      return `${base}/households/${code}.json`;
-    }
-
-    async function pushToFirebase() {
-      if (!cloudConfig.enabled || !cloudConfig.firebaseDbUrl) return;
-      await fetch(getFirebaseEndpoint(), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(appState)
-      });
-    }
-
-    async function pullFromFirebase(silent = true) {
-      if (!cloudConfig.enabled || !cloudConfig.firebaseDbUrl || isSyncingNow) return;
-      isSyncingNow = true;
-      try {
-        const res = await fetch(`${getFirebaseEndpoint()}?t=${Date.now()}`, { cache: 'no-store' });
-        if (!res.ok) return;
-        const remote = await res.json();
-        if (!remote || typeof remote !== 'object') return;
-        if ((remote.lastUpdated || 0) > (appState.lastUpdated || 0)) {
-          appState = {
-            ...DEFAULT_STATE,
-            ...remote,
-            employees: Array.isArray(remote.employees) ? remote.employees : DEFAULT_STATE.employees,
-            shifts: Array.isArray(remote.shifts) ? remote.shifts : [],
-            tasks: Array.isArray(remote.tasks) ? remote.tasks : [],
-            messages: Array.isArray(remote.messages) ? remote.messages : [],
-            closedMonths: remote.closedMonths && typeof remote.closedMonths === 'object' ? remote.closedMonths : {}
-          };
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
-          detectNewChatMessages();
-          if (!hasActiveInputFocus() && !ui.modal) {
-            render();
-          }
-          if (!silent) showToast('Datos sincronizados desde la nube.', 'success');
-        }
-      } catch {
-        if (!silent) showToast('No se pudo conectar con la nube.', 'error');
-      } finally {
-        isSyncingNow = false;
-      }
-    }
-
-    function detectNewChatMessages() {
-      appState.employees.forEach((emp) => {
-        const empMsgs = appState.messages.filter((m) => m.employeeId === emp.id);
-        const prevCount = ui.lastSeenMessageCount[emp.id] ?? empMsgs.length;
-        if (empMsgs.length > prevCount) {
-          const isViewingThisChat =
-            (ui.view === 'emp_space' && ui.selectedEmployeeId === emp.id && ui.employeeTab === 'chat') ||
-            (ui.view === 'owner_dash' && ui.selectedEmployeeId === emp.id && ui.ownerTab === 'chat');
-          if (!isViewingThisChat) {
-            ui.unreadChatForEmployee[emp.id] = true;
-          } else {
-            ui.lastSeenMessageCount[emp.id] = empMsgs.length;
-          }
-        }
-      });
-    }
-
-    function markChatRead(empId) {
-      const count = appState.messages.filter((m) => m.employeeId === empId).length;
-      ui.lastSeenMessageCount[empId] = count;
-      ui.unreadChatForEmployee[empId] = false;
-    }
-
-    function addSystemMessage(employeeId, text) {
-      appState.messages.push({
-        id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        employeeId,
-        sender: 'Sistema',
-        text,
-        timestamp: Date.now(),
-        isSystem: true
-      });
-      detectNewChatMessages();
-    }
-
-    async function addChatMessage(employeeId, sender, text) {
-      const clean = text.trim();
-      if (!clean) return;
-      appState.messages.push({
-        id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        employeeId,
-        sender,
-        text: clean,
-        timestamp: Date.now(),
-        isSystem: false
-      });
-      markChatRead(employeeId);
-      await saveState(true);
-      render();
-    }
-
-    function getActiveShift(employeeId) {
-      return appState.shifts.find((s) => s.employeeId === employeeId && s.status === 'active') || null;
-    }
-
-    async function clockIn(employeeId) {
-      const emp = appState.employees.find((e) => e.id === employeeId);
-      if (!emp) return;
-      if (getActiveShift(employeeId)) {
-        showToast('Ya hay una entrada activa.', 'error');
-        return;
-      }
-      const now = Date.now();
-      const today = getTodayISO();
-      const shift = {
-        id: `sh_${now}_${Math.random().toString(36).slice(2, 6)}`,
-        employeeId,
-        date: today,
-        startTime: now,
-        endTime: null,
-        minutes: 0,
-        rate: getRateForDate(emp, today),
-        status: 'active',
-        confirmedBy: null
-      };
-      appState.shifts.push(shift);
-      addSystemMessage(
-        employeeId,
-        `🟢 ENTRADA de ${emp.name} a las ${formatTimeHHMM(now)} (${today}).`
-      );
-      await saveState(true);
-      showToast(`Entrada fichada a las ${formatTimeHHMM(now)}`, 'success');
-      render();
-    }
-
-    async function executeClockOut(shiftId) {
-      const shift = appState.shifts.find((s) => s.id === shiftId);
-      if (!shift || shift.status !== 'active') return;
-      const emp = appState.employees.find((e) => e.id === shift.employeeId);
-      const now = Date.now();
-      const elapsedMinutes = Math.max(1, (now - shift.startTime) / 60000);
-      shift.endTime = now;
-      shift.minutes = elapsedMinutes;
-      shift.rate = getRateForDate(emp, shift.date);
-      shift.status = 'pending';
-
-      addSystemMessage(
-        shift.employeeId,
-        `🟠 SALIDA de ${emp ? emp.name : 'Empleada'} a las ${formatTimeHHMM(now)} (${formatDurationHM(elapsedMinutes)}). Pendiente de confirmar por Propietario.`
-      );
-      ui.modal = null;
-      await saveState(true);
-      showToast('Salida registrada. Pendiente de confirmación del propietario.', 'info');
-      render();
-    }
-
-    async function confirmShift(shiftId, customEndTimeMs = null) {
-      const shift = appState.shifts.find((s) => s.id === shiftId);
-      if (!shift) return;
-      const emp = appState.employees.find((e) => e.id === shift.employeeId);
-      if (customEndTimeMs && customEndTimeMs > shift.startTime) {
-        shift.endTime = customEndTimeMs;
-      } else if (!shift.endTime) {
-        shift.endTime = Date.now();
-      }
-      const exactMinutes = Math.max(0, (shift.endTime - shift.startTime) / 60000);
-      shift.minutes = exactMinutes;
-      shift.rate = getRateForDate(emp, shift.date);
-      shift.status = 'confirmed';
-      shift.confirmedBy = ui.ownerLabel;
-
-      ui.calendarMonth = getMonthKey(shift.date);
-      ui.selectedCalendarDate = shift.date;
-
-      const amount = ((exactMinutes / 60) * shift.rate).toFixed(2).replace('.', ',');
-      addSystemMessage(
-        shift.employeeId,
-        `✅ Turno CONFIRMADO (${shift.date}, salida ${formatTimeHHMM(shift.endTime)}): ${formatDurationHM(exactMinutes)} (${amount} €) sumados al total.`
-      );
-      ui.modal = null;
-      await saveState(true);
-      showToast('Turno confirmado y sumado al calendario.', 'success');
-      render();
-    }
-
-    function getOvertimeAlerts() {
-      const alerts = [];
-      const now = Date.now();
-      appState.shifts.forEach((s) => {
-        if (s.status !== 'active') return;
-        const emp = appState.employees.find((e) => e.id === s.employeeId);
-        if (!emp) return;
-        const allowedMs = (Number(emp.dailyHours || 8) + 1) * 3600000;
-        const workedMs = now - s.startTime;
-        if (workedMs > allowedMs) {
-          alerts.push({
-            shift: s,
-            employee: emp,
-            workedMinutes: workedMs / 60000,
-            allowedHours: Number(emp.dailyHours || 8)
-          });
-        }
-      });
-      return alerts;
-    }
-
-    async function toggleTask(taskId) {
-      const task = appState.tasks.find((t) => t.id === taskId);
-      if (!task) return;
-      task.completed = !task.completed;
-      await saveState(true);
-      render();
-    }
-
-    function getMonthSummary(employeeId, monthKey) {
-      const emp = appState.employees.find((e) => e.id === employeeId);
-      const dayShifts = appState.shifts.filter(
-        (s) => s.employeeId === employeeId && getMonthKey(s.date) === monthKey
-      );
-      let confirmedMinutes = 0;
-      let pendingMinutes = 0;
-      let confirmedEuros = 0;
-      let pendingEuros = 0;
-
-      dayShifts.forEach((s) => {
-        const mins = Number(s.minutes || 0);
-        const rate = Number(s.rate ?? getRateForDate(emp, s.date));
-        const euros = (mins / 60) * rate;
-        if (s.status === 'confirmed') {
-          confirmedMinutes += mins;
-          confirmedEuros += euros;
-        } else if (s.status === 'pending') {
-          pendingMinutes += mins;
-          pendingEuros += euros;
-        }
-      });
-
-      return {
-        confirmedMinutes,
-        pendingMinutes,
-        confirmedEuros,
-        pendingEuros,
-        isClosed: Boolean(appState.closedMonths[`${employeeId}_${monthKey}`])
-      };
-    }
-
-    function getInviteLink(roleHint = 'empleado') {
-      const baseUrl = `${window.location.origin}${window.location.pathname}`;
-      const params = new URLSearchParams();
-      params.set('hogar', appState.householdCode);
-      params.set('rol', roleHint);
-      if (cloudConfig.enabled && cloudConfig.firebaseDbUrl) {
-        params.set('db', encodeURIComponent(cloudConfig.firebaseDbUrl));
-      }
-      return `${baseUrl}?${params.toString()}`;
-    }
-
-    function renderHeader() {
-      const alerts = getOvertimeAlerts();
-      const canSeeOvertime = ui.view === 'owner_dash' || ui.view === 'owner_auth' || ui.editModeUnlocked;
-
-      return `
-        <header class="bg-slate-900 text-white shadow-md sticky top-0 z-30">
-          <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-            <div class="flex items-center gap-3">
-              <button onclick="goLanding()" class="flex items-center gap-2 text-left group">
-                <span class="w-9 h-9 rounded-xl bg-indigo-500 flex items-center justify-center font-bold text-lg shadow">HS</span>
-                <div>
-                  <div class="font-bold leading-tight tracking-tight group-hover:text-indigo-300 transition">HogarSync</div>
-                  <div class="text-[11px] text-slate-400">
-                    Código: <span class="font-mono text-indigo-300">${appState.householdCode}</span>
-                    · ${cloudConfig.enabled && cloudConfig.firebaseDbUrl ? '<span class="text-emerald-400">Nube activa</span>' : '<span class="text-amber-300">Modo local</span>'}
-                  </div>
-                </div>
-              </button>
-            </div>
-
-            <div class="flex items-center gap-2 flex-wrap">
-              ${
-                canSeeOvertime && alerts.length > 0
-                  ? `<button onclick="openOvertimeModal('${alerts[0].shift.id}')" class="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-xs font-semibold animate-pulse flex items-center gap-1.5">
-                      <span>⚠️ Olvido salida (${alerts.length})</span>
-                    </button>`
-                  : ''
-              }
-
-              <button onclick="openCloudModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700">
-                🔗 Enlace / Nube
-              </button>
-
-              ${
-                ui.view !== 'landing'
-                  ? `<button onclick="goLanding()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700">
-                      Inicio
-                    </button>`
-                  : ''
-              }
-            </div>
+  <!-- Barra superior -->
+  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-warm-200 px-4 py-3 shadow-xs">
+    <div class="max-w-5xl mx-auto flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-10 h-10 rounded-2xl bg-brand-600 text-white flex items-center justify-center font-extrabold text-lg shadow-sm shrink-0">
+          HC
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-slate-900 text-base sm:text-lg truncate">HogarControl</h1>
+            <span id="syncBadge" class="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 shrink-0">
+              <span id="syncDot" class="w-2 h-2 rounded-full bg-amber-400"></span>
+              <span id="syncText">Conectando</span>
+            </span>
           </div>
-        </header>
-      `;
-    }
+          <p id="headerSubtitle" class="text-xs text-slate-500 truncate">Sin sesión iniciada</p>
+        </div>
+      </div>
 
-    function renderLanding() {
-      return `
-        <div class="max-w-3xl mx-auto w-full px-4 py-10 flex-1 flex flex-col justify-center">
-          <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 sm:p-8">
-            <div class="text-center mb-8">
-              <span class="inline-block px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold mb-2">
-                Hogar · <span class="font-mono">${appState.householdCode}</span>
+      <div id="headerActions" class="flex items-center gap-2 shrink-0 hidden">
+        <button id="editModeBtn" onclick="toggleEditMode()" class="hidden px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer">
+          Modo Edición: OFF
+        </button>
+        <button onclick="logoutSession()" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer">
+          Salir
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Banner de avisos / alertas globales -->
+  <div id="globalAlerts" class="max-w-5xl w-full mx-auto px-4 pt-3 space-y-2"></div>
+
+  <!-- Contenedor principal -->
+  <main id="appContainer" class="flex-1 max-w-5xl w-full mx-auto px-4 py-5">
+
+    <!-- PANTALLA 1: ACCESO Y SELECCIÓN DE ROL -->
+    <section id="loginView" class="max-w-md mx-auto">
+      <div class="bg-white rounded-3xl border border-warm-200 shadow-sm p-6 space-y-5">
+        <div class="text-center space-y-1">
+          <h2 class="text-xl font-bold text-slate-900">Acceso al Hogar</h2>
+          <p class="text-sm text-slate-500">Sincronización en tiempo real entre dispositivos</p>
+        </div>
+
+        <!-- Código de hogar -->
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+            Código de Hogar
+          </label>
+          <div class="flex gap-2">
+            <input id="loginHomeCode" type="text" placeholder="Ej. HOGAR-7842"
+              class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-warm-50 text-slate-900 font-semibold uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            <button type="button" onclick="generateNewHomeCode()" title="Generar código nuevo"
+              class="px-3.5 py-2.5 rounded-xl bg-warm-100 hover:bg-warm-200 text-slate-700 text-xs font-bold transition cursor-pointer">
+              Nuevo
+            </button>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-1">
+            Si abriste un enlace de invitación, el código ya aparece aquí.
+          </p>
+        </div>
+
+        <!-- Selector de Rol -->
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+            Entrar como
+          </label>
+          <div class="grid grid-cols-2 gap-2.5">
+            <button type="button" id="roleOwnerBtn" onclick="selectRole('owner')"
+              class="py-3 px-4 rounded-2xl border-2 border-brand-600 bg-brand-50 text-brand-700 font-bold text-sm transition cursor-pointer">
+              Propietario
+            </button>
+            <button type="button" id="roleEmployeeBtn" onclick="selectRole('employee')"
+              class="py-3 px-4 rounded-2xl border border-slate-200 bg-white text-slate-600 font-bold text-sm hover:bg-slate-50 transition cursor-pointer">
+              Empleado/a
+            </button>
+          </div>
+        </div>
+
+        <!-- Campos Propietario -->
+        <div id="ownerLoginBox" class="space-y-3">
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+              Contraseña Máster
+            </label>
+            <input id="ownerPasswordInput" type="password" placeholder="Introduce la contraseña máster"
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-warm-50 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <p id="ownerFirstTimeHint" class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-2.5 hidden">
+            Si el hogar aún no tiene contraseña máster, al entrar por primera vez se creará con la contraseña que escribas aquí.
+          </p>
+        </div>
+
+        <!-- Campos Empleado -->
+        <div id="employeeLoginBox" class="space-y-3 hidden">
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+              Selecciona tu nombre
+            </label>
+            <select id="employeeSelectLogin"
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-warm-50 text-slate-900 font-medium focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <option value="">Cargando empleadas...</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+              Contraseña
+            </label>
+            <input id="employeePasswordInput" type="password" placeholder="Por defecto tu nombre en minúsculas"
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-warm-50 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+        </div>
+
+        <p id="loginError" class="text-xs font-semibold text-red-600 hidden"></p>
+
+        <button type="button" onclick="handleLogin()"
+          class="w-full py-3.5 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm shadow-sm transition cursor-pointer">
+          Entrar al Hogar
+        </button>
+      </div>
+    </section>
+
+    <!-- PANTALLA 2: ESPACIO DE EMPLEADA -->
+    <section id="employeeView" class="hidden space-y-4">
+      <!-- Navegación pestañas empleada -->
+      <div class="grid grid-cols-3 gap-2 bg-white p-1.5 rounded-2xl border border-warm-200 shadow-xs">
+        <button id="empTabFichaje" onclick="switchEmpTab('fichaje')"
+          class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold bg-brand-600 text-white transition cursor-pointer">
+          Fichaje y Tareas
+        </button>
+        <button id="empTabCalendario" onclick="switchEmpTab('calendario')"
+          class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-warm-50 transition cursor-pointer">
+          Calendario
+        </button>
+        <button id="empTabChat" onclick="switchEmpTab('chat')"
+          class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-warm-50 transition cursor-pointer flex items-center justify-center gap-1.5">
+          <span>Chat</span>
+          <span id="empChatBadge" class="hidden px-1.5 py-0.5 text-[10px] rounded-full bg-red-600 text-white font-extrabold">0</span>
+        </button>
+      </div>
+
+      <!-- Pestaña 1: Fichaje y Tareas -->
+      <div id="empPanelFichaje" class="space-y-4">
+        <div class="bg-white rounded-3xl border border-warm-200 p-5 sm:p-6 shadow-xs space-y-5">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <span id="empShiftStatusBadge" class="inline-block px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600">
+                Sin turno activo
               </span>
-              <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900">¿Quién va a usar la app?</h1>
-              <p class="text-slate-500 text-sm mt-1">Selecciona tu perfil para fichar, revisar tareas, calendario o gestionar el hogar.</p>
+              <h2 id="empGreetingName" class="text-xl font-bold text-slate-900 mt-1"></h2>
             </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <button onclick="selectRole('owner')" class="group p-6 rounded-2xl border-2 border-slate-200 hover:border-indigo-600 bg-slate-50 hover:bg-indigo-50/40 text-left transition flex flex-col justify-between gap-4">
-                <div>
-                  <div class="w-12 h-12 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-xl font-bold mb-4 group-hover:scale-105 transition">
-                    P
-                  </div>
-                  <h2 class="text-xl font-bold text-slate-900">Propietario</h2>
-                  <p class="text-sm text-slate-600 mt-1">
-                    Acceso Máster y Modo Edición (con contraseña). Gestiona empleadas, tarifas, tareas, confirmaciones y enlaces.
-                  </p>
-                </div>
-                <span class="text-sm font-semibold text-indigo-700">Entrar como Propietario →</span>
-              </button>
-
-              <button onclick="selectRole('employee')" class="group p-6 rounded-2xl border-2 border-slate-200 hover:border-emerald-600 bg-slate-50 hover:bg-emerald-50/40 text-left transition flex flex-col justify-between gap-4">
-                <div>
-                  <div class="w-12 h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-xl font-bold mb-4 group-hover:scale-105 transition">
-                    E
-                  </div>
-                  <h2 class="text-xl font-bold text-slate-900">Empleado</h2>
-                  <p class="text-sm text-slate-600 mt-1">
-                    Elige tu nombre, introduce tu contraseña, ficha entrada/salida, consulta tus tareas especiales, calendario y chat.
-                  </p>
-                </div>
-                <span class="text-sm font-semibold text-emerald-700">Entrar como Empleado →</span>
-              </button>
+            <div class="text-right">
+              <div class="text-xs text-slate-400 font-medium">Total hoy (confirmado + en curso)</div>
+              <div id="empTodayTotal" class="text-2xl font-extrabold text-brand-700 tabular-nums">0h 00m</div>
             </div>
+          </div>
+
+          <!-- Cronómetro turno actual -->
+          <div class="bg-warm-50 border border-warm-200 rounded-2xl p-4 flex items-center justify-between">
+            <div>
+              <div class="text-xs font-semibold text-slate-500">Cronómetro del turno actual</div>
+              <div id="empActiveTimer" class="text-3xl font-extrabold text-slate-900 tabular-nums mt-0.5">0h 00m</div>
+            </div>
+            <div id="empActiveSince" class="text-xs text-slate-500 text-right"></div>
+          </div>
+
+          <!-- Botones Entrada / Salida -->
+          <div class="grid grid-cols-2 gap-3">
+            <button id="btnClockIn" onclick="clockIn()"
+              class="py-4 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold text-base shadow-xs transition cursor-pointer">
+              Entrada
+            </button>
+            <button id="btnClockOut" onclick="requestClockOut()" disabled
+              class="py-4 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold text-base shadow-xs transition cursor-pointer">
+              Salida
+            </button>
           </div>
         </div>
-      `;
-    }
 
-    function renderOwnerAuth() {
-      return `
-        <div class="max-w-md mx-auto w-full px-4 py-12 flex-1 flex items-center">
-          <form onsubmit="submitOwnerAuth(event)" class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 w-full space-y-4">
-            <h2 class="text-xl font-bold text-slate-900">Acceso Propietario / Modo Edición</h2>
-            <p class="text-xs text-slate-500">
-              La contraseña de Propietario 1 (Máster) y del Modo Edición es la misma (por defecto: <span class="font-mono font-semibold">admin</span>).
-            </p>
-
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-1">Identificador en este dispositivo</label>
-              <select id="ownerLabelInput" class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm bg-white">
-                <option value="Propietario 1 (Máster)" ${ui.ownerLabel === 'Propietario 1 (Máster)' ? 'selected' : ''}>Propietario 1 (Máster)</option>
-                <option value="Propietario 2" ${ui.ownerLabel === 'Propietario 2' ? 'selected' : ''}>Propietario 2</option>
-                <option value="Propietario 3" ${ui.ownerLabel === 'Propietario 3' ? 'selected' : ''}>Propietario 3</option>
-              </select>
-            </div>
-
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-1">Contraseña</label>
-              <input id="ownerPassInput" type="password" required placeholder="Introduce la contraseña" class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            </div>
-
-            ${ui.authError ? `<p class="text-xs text-red-600 font-medium">${ui.authError}</p>` : ''}
-
-            <div class="flex gap-2 pt-2">
-              <button type="button" onclick="goLanding()" class="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50">
-                Volver
-              </button>
-              <button type="submit" class="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">
-                Entrar
-              </button>
-            </div>
-          </form>
+        <!-- Tareas especiales del día -->
+        <div class="bg-white rounded-3xl border border-warm-200 p-5 shadow-xs space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="font-bold text-slate-900">Tareas especiales del día</h3>
+            <span id="empTasksDateLabel" class="text-xs font-semibold text-slate-500"></span>
+          </div>
+          <div id="empTasksList" class="space-y-2"></div>
         </div>
-      `;
-    }
+      </div>
 
-    function renderEmployeeSelect() {
-      return `
-        <div class="max-w-xl mx-auto w-full px-4 py-10 flex-1">
-          <div class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6">
-            <div class="flex items-center justify-between mb-6">
-              <div>
-                <h2 class="text-xl font-bold text-slate-900">Selecciona tu nombre</h2>
-                <p class="text-xs text-slate-500">Pulsa en tu perfil para introducir tu contraseña.</p>
-              </div>
-              <button onclick="goLanding()" class="text-xs font-semibold text-slate-600 hover:text-slate-900">← Atrás</button>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              ${appState.employees
-                .map((emp) => {
-                  const active = getActiveShift(emp.id);
-                  const hasUnread = ui.unreadChatForEmployee[emp.id];
-                  return `
-                    <button onclick="chooseEmployeeForAuth('${emp.id}')" class="p-4 rounded-xl border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/40 text-left transition flex items-center justify-between">
-                      <div>
-                        <div class="font-bold text-slate-900 text-base">${emp.name}</div>
-                        <div class="text-xs text-slate-500">Código: <span class="font-mono">${emp.name}</span></div>
-                        <div class="mt-1">
-                          ${
-                            active
-                              ? `<span class="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800">En jornada</span>`
-                              : `<span class="inline-block px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600">Fuera de turno</span>`
-                          }
-                        </div>
-                      </div>
-                      <div class="flex flex-col items-end gap-1">
-                        ${hasUnread ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400 text-slate-950 chat-alert-glow">Chat</span>` : ''}
-                        <span class="text-emerald-700 font-bold text-lg">→</span>
-                      </div>
-                    </button>
-                  `;
-                })
-                .join('')}
-            </div>
-          </div>
-        </div>
-      `;
-    }
-
-    function renderEmployeeAuth() {
-      const emp = appState.employees.find((e) => e.id === ui.selectedEmployeeId);
-      if (!emp) return renderEmployeeSelect();
-
-      return `
-        <div class="max-w-md mx-auto w-full px-4 py-12 flex-1 flex items-center">
-          <form onsubmit="submitEmployeeAuth(event)" class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 w-full space-y-4">
+      <!-- Pestaña 2: Calendario Empleada -->
+      <div id="empPanelCalendario" class="hidden space-y-4">
+        <div class="bg-white rounded-3xl border border-warm-200 p-5 shadow-xs space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <span class="text-xs font-semibold text-emerald-700 uppercase">Perfil de Empleado</span>
-              <h2 class="text-2xl font-bold text-slate-900">${emp.name}</h2>
-              <p class="text-xs text-slate-500">Código: <span class="font-mono">${emp.name}</span></p>
+              <h3 class="font-bold text-lg text-slate-900">Resumen Mensual</h3>
+              <p class="text-xs text-slate-500">Solo computan los turnos confirmados por el propietario (sin redondeo)</p>
             </div>
+            <input id="empMonthPicker" type="month" onchange="renderEmployeeCalendar()"
+              class="px-3 py-2 rounded-xl border border-slate-200 bg-warm-50 text-sm font-semibold text-slate-800" />
+          </div>
 
-            <div>
-              <label class="block text-xs font-semibold text-slate-700 mb-1">Contraseña</label>
-              <input id="empPassInput" type="password" required placeholder="Tu contraseña" class="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          <div class="grid grid-cols-3 gap-3">
+            <div class="bg-warm-50 rounded-2xl p-3.5 border border-warm-200">
+              <div class="text-xs text-slate-500">Días trabajados</div>
+              <div id="empMonthDays" class="text-xl font-extrabold text-slate-900 mt-0.5">0</div>
             </div>
-
-            ${ui.authError ? `<p class="text-xs text-red-600 font-medium">${ui.authError}</p>` : ''}
-
-            <div class="flex gap-2 pt-2">
-              <button type="button" onclick="ui.view='emp_select'; ui.authError=''; render();" class="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold hover:bg-slate-50">
-                Cambiar nombre
-              </button>
-              <button type="submit" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">
-                Entrar
-              </button>
+            <div class="bg-warm-50 rounded-2xl p-3.5 border border-warm-200">
+              <div class="text-xs text-slate-500">Horas confirmadas</div>
+              <div id="empMonthHours" class="text-xl font-extrabold text-slate-900 tabular-nums mt-0.5">0h 00m</div>
             </div>
-          </form>
+            <div class="bg-brand-50 rounded-2xl p-3.5 border border-brand-200">
+              <div class="text-xs text-brand-700 font-semibold">Total a cobrar</div>
+              <div id="empMonthAmount" class="text-xl font-extrabold text-brand-800 tabular-nums mt-0.5">0,00 €</div>
+            </div>
+          </div>
+
+          <div id="empMonthClosedBanner" class="hidden p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold"></div>
+
+          <div id="empCalendarEntries" class="space-y-2.5"></div>
         </div>
-      `;
-    }
+      </div>
 
-    function renderCalendarPanel(employeeId, isOwner) {
-      const emp = appState.employees.find((e) => e.id === employeeId);
-      if (!emp) return '';
-
-      const [yearStr, monthStr] = ui.calendarMonth.split('-');
-      const year = Number(yearStr);
-      const monthIndex = Number(monthStr) - 1;
-      const firstDay = new Date(year, monthIndex, 1);
-      const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
-      const startWeekday = (firstDay.getDay() + 6) % 7;
-      const summary = getMonthSummary(employeeId, ui.calendarMonth);
-
-      const cells = [];
-      for (let i = 0; i < startWeekday; i++) {
-        cells.push(`<div class="h-16 sm:h-20 rounded-lg bg-slate-50/60 border border-slate-100"></div>`);
-      }
-
-      for (let day = 1; day <= daysInMonth; day++) {
-        const dateStr = `${yearStr}-${monthStr}-${String(day).padStart(2, '0')}`;
-        const dayShifts = appState.shifts.filter((s) => s.employeeId === employeeId && s.date === dateStr);
-        const isSelected = ui.selectedCalendarDate === dateStr;
-
-        let totalMins = 0;
-        let hasActive = false;
-        let hasPending = false;
-        let hasConfirmed = false;
-
-        dayShifts.forEach((s) => {
-          if (s.status === 'active') {
-            hasActive = true;
-            totalMins += Math.max(0, (Date.now() - s.startTime) / 60000);
-          } else if (s.status === 'pending') {
-            hasPending = true;
-            totalMins += Number(s.minutes || 0);
-          } else if (s.status === 'confirmed') {
-            hasConfirmed = true;
-            totalMins += Number(s.minutes || 0);
-          }
-        });
-
-        let stateBadge = '';
-        if (hasActive) {
-          stateBadge = `<span class="inline-block w-2 h-2 rounded-full bg-blue-500" title="En curso"></span>`;
-        } else if (hasPending) {
-          stateBadge = `<span class="inline-block w-2 h-2 rounded-full bg-amber-500" title="Pendiente de confirmar"></span>`;
-        } else if (hasConfirmed) {
-          stateBadge = `<span class="inline-block w-2 h-2 rounded-full bg-emerald-500" title="Confirmado"></span>`;
-        }
-
-        cells.push(`
-          <button onclick="selectCalendarDay('${dateStr}')" class="h-16 sm:h-20 rounded-lg border p-1.5 text-left flex flex-col justify-between transition ${
-            isSelected
-              ? 'border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-200'
-              : 'border-slate-200 bg-white hover:border-slate-300'
-          }">
-            <div class="flex items-center justify-between w-full">
-              <span class="text-xs font-bold ${isSelected ? 'text-indigo-800' : 'text-slate-700'}">${day}</span>
-              ${stateBadge}
-            </div>
-            <div class="text-[11px] font-semibold leading-tight ${totalMins > 0 ? 'text-slate-800' : 'text-slate-300'}">
-              ${totalMins > 0 ? formatDurationHM(totalMins) : '—'}
-            </div>
-          </button>
-        `);
-      }
-
-      const selectedDayShifts = appState.shifts.filter(
-        (s) => s.employeeId === employeeId && s.date === ui.selectedCalendarDate
-      );
-
-      return `
-        <div class="space-y-4">
-          <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm">
-            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <div class="flex items-center gap-2">
-                <button onclick="changeCalendarMonth(-1)" class="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-sm font-bold">‹</button>
-                <h3 class="text-base sm:text-lg font-bold text-slate-900 capitalize">
-                  ${new Date(year, monthIndex, 1).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' })}
-                </h3>
-                <button onclick="changeCalendarMonth(1)" class="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-sm font-bold">›</button>
-              </div>
-
-              <div class="flex items-center gap-3 text-xs">
-                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span> En curso</span>
-                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> Pendiente</span>
-                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> Confirmado</span>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-3 gap-3 mb-5">
-              <div class="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200">
-                <div class="text-[11px] font-semibold text-emerald-800 uppercase">Horas confirmadas</div>
-                <div class="text-lg font-extrabold text-emerald-950 mt-0.5">${formatDurationHM(summary.confirmedMinutes)}</div>
-                <div class="text-sm font-bold text-emerald-700 mt-0.5">${summary.confirmedEuros.toFixed(2).replace('.', ',')} €</div>
-              </div>
-
-              <div class="p-3.5 rounded-xl bg-amber-50 border border-amber-200">
-                <div class="text-[11px] font-semibold text-amber-800 uppercase">Pendientes confirmar</div>
-                <div class="text-lg font-extrabold text-amber-950 mt-0.5">${formatDurationHM(summary.pendingMinutes)}</div>
-                <div class="text-xs font-semibold text-amber-700 mt-0.5">(${summary.pendingEuros.toFixed(2).replace('.', ',')} € sin sumar)</div>
-              </div>
-
-              <div class="p-3.5 rounded-xl bg-slate-900 text-white flex flex-col justify-between">
-                <div>
-                  <div class="text-[11px] font-semibold text-slate-300 uppercase">Cierre del mes</div>
-                  <div class="text-sm font-bold mt-1">
-                    ${summary.isClosed ? `<span class="text-emerald-400">✓ Cerrado (${summary.isClosed})</span>` : '<span class="text-amber-300">Abierto</span>'}
-                  </div>
-                </div>
-                ${
-                  isOwner
-                    ? `<button onclick="toggleCloseMonth('${employeeId}', '${ui.calendarMonth}')" class="mt-2 w-full py-1.5 rounded-lg text-xs font-bold ${
-                        summary.isClosed ? 'bg-slate-700 hover:bg-slate-600 text-white' : 'bg-indigo-500 hover:bg-indigo-400 text-white'
-                      }">
-                        ${summary.isClosed ? 'Reabrir mes' : 'Marcar cierre de mes'}
-                      </button>`
-                    : ''
-                }
-              </div>
-            </div>
-
-            <div class="grid grid-cols-7 gap-1.5 text-center text-[11px] font-bold text-slate-400 mb-1.5">
-              <div>LUN</div><div>MAR</div><div>MIÉ</div><div>JUE</div><div>VIE</div><div>SÁB</div><div>DOM</div>
-            </div>
-            <div class="grid grid-cols-7 gap-1.5">
-              ${cells.join('')}
-            </div>
+      <!-- Pestaña 3: Chat Empleada -->
+      <div id="empPanelChat" class="hidden">
+        <div class="bg-white rounded-3xl border border-warm-200 shadow-xs overflow-hidden flex flex-col h-[65vh] min-h-[420px]">
+          <div class="px-4 py-3 bg-warm-50 border-b border-warm-200 flex items-center justify-between">
+            <h3 class="font-bold text-slate-900 text-sm">Chat del Hogar</h3>
+            <span class="text-xs text-slate-500">Sincronizado en tiempo real</span>
           </div>
-
-          <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm">
-            <h4 class="font-bold text-slate-900 mb-3">Detalle del día: <span class="font-mono text-indigo-700">${ui.selectedCalendarDate}</span></h4>
-            ${
-              selectedDayShifts.length === 0
-                ? `<p class="text-sm text-slate-400">No hay turnos registrados en esta fecha.</p>`
-                : `<div class="space-y-2.5">
-                    ${selectedDayShifts
-                      .map((s) => {
-                        const mins =
-                          s.status === 'active'
-                            ? Math.max(0, (Date.now() - s.startTime) / 60000)
-                            : Number(s.minutes || 0);
-                        const euros = ((mins / 60) * Number(s.rate || 10)).toFixed(2).replace('.', ',');
-                        const badgeMap = {
-                          active: ['bg-blue-100 text-blue-800', 'En curso'],
-                          pending: ['bg-amber-100 text-amber-800', 'Pendiente confirmar'],
-                          confirmed: ['bg-emerald-100 text-emerald-800', 'Confirmado']
-                        };
-                        const [bClass, bLabel] = badgeMap[s.status] || ['bg-slate-100 text-slate-700', s.status];
-
-                        return `
-                          <div class="p-3 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <div class="flex items-center gap-2">
-                                <span class="text-sm font-bold text-slate-800">${formatTimeHHMM(s.startTime)} – ${s.endTime ? formatTimeHHMM(s.endTime) : 'Ahora'}</span>
-                                <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold ${bClass}">${bLabel}</span>
-                              </div>
-                              <div class="text-xs text-slate-500 mt-0.5">
-                                Tiempo: <strong>${formatDurationHM(mins)}</strong> · Tarifa: ${Number(s.rate || 10).toFixed(2).replace('.', ',')} €/h · Importe: <strong>${euros} €</strong>
-                              </div>
-                            </div>
-
-                            ${
-                              isOwner
-                                ? `<div class="flex items-center gap-2">
-                                    ${
-                                      s.status !== 'confirmed'
-                                        ? `<button onclick="confirmShift('${s.id}')" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">
-                                            Confirmar turno
-                                          </button>`
-                                        : ''
-                                    }
-                                    <button onclick="openAdjustShiftModal('${s.id}')" class="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold">
-                                      Ajustar / Editar
-                                    </button>
-                                  </div>`
-                                : ''
-                            }
-                          </div>
-                        `;
-                      })
-                      .join('')}
-                  </div>`
-            }
-          </div>
-        </div>
-      `;
-    }
-
-    function renderChatPanel(employeeId, senderName) {
-      const msgs = appState.messages.filter((m) => m.employeeId === employeeId);
-      return `
-        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[460px]">
-          <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-            <div>
-              <h3 class="font-bold text-slate-900 text-sm">Chat sincronizado</h3>
-              <p class="text-[11px] text-slate-500">Avisos automáticos de entrada/salida/confirmación y mensajes del grupo</p>
-            </div>
-          </div>
-
-          <div id="chatMessagesBox" class="flex-1 overflow-y-auto p-4 space-y-2.5 bg-slate-50/60">
-            ${
-              msgs.length === 0
-                ? `<p class="text-center text-xs text-slate-400 py-8">Aún no hay mensajes en este chat.</p>`
-                : msgs
-                    .map((m) => {
-                      if (m.isSystem) {
-                        return `
-                          <div class="text-center">
-                            <span class="inline-block px-3 py-1 rounded-full bg-slate-200/80 text-slate-700 text-xs font-medium">
-                              ${m.text} <span class="text-[10px] text-slate-500 ml-1">${formatTimeHHMM(m.timestamp)}</span>
-                            </span>
-                          </div>
-                        `;
-                      }
-                      const isMine = m.sender === senderName;
-                      return `
-                        <div class="flex flex-col ${isMine ? 'items-end' : 'items-start'}">
-                          <span class="text-[10px] font-semibold text-slate-500 px-1 mb-0.5">${m.sender} · ${formatTimeHHMM(m.timestamp)}</span>
-                          <div class="max-w-[82%] px-3.5 py-2 rounded-2xl text-sm ${
-                            isMine
-                              ? 'bg-indigo-600 text-white rounded-br-sm'
-                              : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'
-                          }">
-                            ${m.text}
-                          </div>
-                        </div>
-                      `;
-                    })
-                    .join('')
-            }
-          </div>
-
-          <form onsubmit="submitChatMessage(event, '${employeeId}', '${senderName}')" class="p-3 border-t border-slate-200 flex gap-2 bg-white rounded-b-2xl">
-            <input id="chatInputField" type="text" required placeholder="Escribe un mensaje..." class="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            <button type="submit" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">
+          <div id="empChatMessages" class="flex-1 overflow-y-auto p-4 space-y-2.5 bg-warm-50/40"></div>
+          <form onsubmit="sendChatMessage(event, currentUser.employeeId, 'employee')" class="p-3 bg-white border-t border-warm-200 flex gap-2">
+            <input id="empChatInput" type="text" placeholder="Escribe un mensaje..."
+              class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-warm-50 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            <button type="submit" class="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold cursor-pointer">
               Enviar
             </button>
           </form>
         </div>
-      `;
-    }
+      </div>
+    </section>
 
-    function renderEmployeeSpace() {
-      const emp = appState.employees.find((e) => e.id === ui.selectedEmployeeId) || appState.employees[0];
-      if (!emp) return renderEmployeeSelect();
-      ui.selectedEmployeeId = emp.id;
+    <!-- PANTALLA 3: ESPACIO DE PROPIETARIO -->
+    <section id="ownerView" class="hidden space-y-4">
+      <!-- Pestañas Propietario -->
+      <div class="flex flex-wrap gap-2 bg-white p-1.5 rounded-2xl border border-warm-200 shadow-xs">
+        <button id="ownTabPanel" onclick="switchOwnerTab('panel')"
+          class="flex-1 min-w-[110px] py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold bg-brand-600 text-white transition cursor-pointer">
+          Fichajes y Tareas
+        </button>
+        <button id="ownTabCalendario" onclick="switchOwnerTab('calendario')"
+          class="flex-1 min-w-[110px] py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-warm-50 transition cursor-pointer">
+          Calendario y Pagos
+        </button>
+        <button id="ownTabChat" onclick="switchOwnerTab('chat')"
+          class="flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-warm-50 transition cursor-pointer flex items-center justify-center gap-1.5">
+          <span>Chat</span>
+          <span id="ownChatBadge" class="hidden px-1.5 py-0.5 text-[10px] rounded-full bg-red-600 text-white font-extrabold">0</span>
+        </button>
+        <button id="ownTabAjustes" onclick="switchOwnerTab('ajustes')"
+          class="flex-1 min-w-[110px] py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-warm-50 transition cursor-pointer">
+          Empleadas y Hogar
+        </button>
+      </div>
 
-      const activeShift = getActiveShift(emp.id);
-      const today = getTodayISO();
-      const todayTasks = appState.tasks.filter((t) => t.employeeId === emp.id && t.date === today);
-      const todayShifts = appState.shifts.filter((s) => s.employeeId === emp.id && s.date === today);
-      const hasUnreadChat = Boolean(ui.unreadChatForEmployee[emp.id]);
+      <!-- Selector de empleada activa para el propietario -->
+      <div class="bg-white rounded-2xl border border-warm-200 p-3.5 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Empleada:</span>
+          <select id="ownerSelectedEmployee" onchange="onOwnerEmployeeChange()"
+            class="px-3 py-2 rounded-xl border border-slate-200 bg-warm-50 text-sm font-bold text-slate-900">
+          </select>
+        </div>
+        <div id="ownerEmployeeRateInfo" class="text-xs font-semibold text-brand-700 bg-brand-50 px-3 py-1.5 rounded-xl"></div>
+      </div>
 
-      const priorityBadge = {
-        alta: 'bg-red-100 text-red-700 border-red-200',
-        media: 'bg-amber-100 text-amber-800 border-amber-200',
-        baja: 'bg-slate-100 text-slate-600 border-slate-200'
-      };
+      <!-- Pestaña 1: Fichajes pendientes/recientes y Tareas -->
+      <div id="ownPanelFichajes" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="bg-white rounded-3xl border border-warm-200 p-5 shadow-xs space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="font-bold text-slate-900">Control de Fichajes</h3>
+            <span class="text-xs text-slate-400">Confirmar o editar</span>
+          </div>
+          <div id="ownerShiftsList" class="space-y-2.5"></div>
+        </div>
 
-      return `
-        <div class="max-w-5xl mx-auto w-full px-4 py-5 flex-1">
-          <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div class="bg-white rounded-3xl border border-warm-200 p-5 shadow-xs space-y-3">
+          <h3 class="font-bold text-slate-900">Asignar Tarea Especial del Día</h3>
+          <form onsubmit="addDailyTask(event)" class="space-y-2.5">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <input id="taskDateInput" type="date" required
+                class="px-3 py-2 rounded-xl border border-slate-200 bg-warm-50 text-sm font-medium" />
+              <input id="taskTitleInput" type="text" required placeholder="Ej. Limpiar cristales salón"
+                class="sm:col-span-2 px-3 py-2 rounded-xl border border-slate-200 bg-warm-50 text-sm" />
+            </div>
+            <button type="submit"
+              class="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold transition cursor-pointer">
+              Añadir tarea en tiempo real
+            </button>
+          </form>
+          <div id="ownerTasksList" class="space-y-2 pt-2"></div>
+        </div>
+      </div>
+
+      <!-- Pestaña 2: Calendario y Cierre/Pago de Mes -->
+      <div id="ownPanelCalendario" class="hidden">
+        <div class="bg-white rounded-3xl border border-warm-200 p-5 shadow-xs space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <span class="text-xs font-semibold text-emerald-700">Espacio de Empleado</span>
-              <h1 class="text-2xl font-extrabold text-slate-900">${emp.name}</h1>
+              <h3 class="font-bold text-lg text-slate-900">Calendario y Liquidación Mensual</h3>
+              <p class="text-xs text-slate-500">Cálculo exacto sin redondeo según tarifa vigente de cada fecha</p>
             </div>
+            <input id="ownerMonthPicker" type="month" onchange="renderOwnerCalendar()"
+              class="px-3 py-2 rounded-xl border border-slate-200 bg-warm-50 text-sm font-semibold" />
+          </div>
 
-            <div class="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
-              <button onclick="setEmployeeTab('home')" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                ui.employeeTab === 'home' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-              }">
-                Fichar y Tareas
-              </button>
-              <button onclick="setEmployeeTab('calendar')" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                ui.employeeTab === 'calendar' ? 'bg-emerald-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-              }">
-                Calendario
-              </button>
-              <button onclick="setEmployeeTab('chat')" class="px-3.5 py-1.5 rounded-lg text-xs font-bold transition relative ${
-                ui.employeeTab === 'chat'
-                  ? 'bg-emerald-600 text-white'
-                  : hasUnreadChat
-                  ? 'bg-amber-300 text-slate-950 chat-alert-glow'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }">
-                Chat ${hasUnreadChat ? '●' : ''}
-              </button>
+          <div class="grid grid-cols-3 gap-3">
+            <div class="bg-warm-50 rounded-2xl p-3.5 border border-warm-200">
+              <div class="text-xs text-slate-500">Días trabajados</div>
+              <div id="ownMonthDays" class="text-xl font-extrabold text-slate-900 mt-0.5">0</div>
+            </div>
+            <div class="bg-warm-50 rounded-2xl p-3.5 border border-warm-200">
+              <div class="text-xs text-slate-500">Horas confirmadas</div>
+              <div id="ownMonthHours" class="text-xl font-extrabold text-slate-900 tabular-nums mt-0.5">0h 00m</div>
+            </div>
+            <div class="bg-brand-50 rounded-2xl p-3.5 border border-brand-200">
+              <div class="text-xs text-brand-700 font-semibold">Importe calculado</div>
+              <div id="ownMonthAmount" class="text-xl font-extrabold text-brand-800 tabular-nums mt-0.5">0,00 €</div>
             </div>
           </div>
 
-          ${
-            ui.employeeTab === 'home'
-              ? `
-                <div class="employee-main-grid space-y-5 landscape:space-y-0">
-                  <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
-                    <div class="flex items-center justify-between">
-                      <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Control de jornada</span>
-                      <span class="text-xs font-semibold text-slate-500">Hoy · ${today}</span>
-                    </div>
+          <!-- Cierre y registro de pago abonado -->
+          <div class="bg-warm-50 border border-warm-200 rounded-2xl p-4 space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span class="text-sm font-bold text-slate-900">Marcar / Cerrar Mes y Registrar Pago Abonado</span>
+              <span id="ownMonthPaymentStatus" class="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-200 text-slate-700">
+                Abierto
+              </span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div>
+                <label class="block text-[11px] font-bold text-slate-500 mb-1">Importe abonado (€)</label>
+                <input id="paidAmountInput" type="number" step="0.01" min="0" placeholder="Ej. 450.00"
+                  class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-semibold" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-bold text-slate-500 mb-1">Fecha de pago</label>
+                <input id="paidDateInput" type="date"
+                  class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm" />
+              </div>
+              <div class="flex items-end">
+                <button type="button" onclick="saveMonthPayment()"
+                  class="w-full py-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition cursor-pointer">
+                  Guardar pago y cerrar mes
+                </button>
+              </div>
+            </div>
+          </div>
 
-                    <div class="p-4 rounded-2xl bg-slate-900 text-white text-center">
-                      <div class="text-xs text-slate-400 mb-1">
-                        ${activeShift ? `Entrada a las ${formatTimeHHMM(activeShift.startTime)}` : 'Sin entrada activa'}
-                      </div>
-                      <div id="liveChronoDisplay" class="text-3xl sm:text-4xl font-mono font-extrabold tracking-tight text-emerald-400">
-                        ${activeShift ? formatDurationHMS(Date.now() - activeShift.startTime) : '00:00:00'}
-                      </div>
-                      <div id="liveChronoHM" class="text-xs font-semibold text-slate-300 mt-1">
-                        ${activeShift ? formatDurationHM((Date.now() - activeShift.startTime) / 60000) : '0h 00m'}
-                      </div>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-3">
-                      <button
-                        onclick="clockIn('${emp.id}')"
-                        ${activeShift ? 'disabled' : ''}
-                        class="py-3.5 px-4 rounded-xl font-bold text-sm transition ${
-                          activeShift
-                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                            : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow'
-                        }"
-                      >
-                        Fichar Entrada
-                      </button>
-
-                      <button
-                        onclick="requestClockOutConfirm('${activeShift ? activeShift.id : ''}')"
-                        ${!activeShift ? 'disabled' : ''}
-                        class="py-3.5 px-4 rounded-xl font-bold text-sm transition ${
-                          !activeShift
-                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                            : 'bg-rose-600 hover:bg-rose-700 text-white shadow'
-                        }"
-                      >
-                        Fichar Salida
-                      </button>
-                    </div>
-
-                    <div class="pt-2 border-t border-slate-100">
-                      <div class="text-xs font-bold text-slate-600 mb-2">Turnos de hoy</div>
-                      ${
-                        todayShifts.length === 0
-                          ? `<p class="text-xs text-slate-400">Aún no has fichado hoy.</p>`
-                          : `<div class="space-y-1.5">
-                              ${todayShifts
-                                .map((s) => {
-                                  const m =
-                                    s.status === 'active'
-                                      ? Math.max(0, (Date.now() - s.startTime) / 60000)
-                                      : Number(s.minutes || 0);
-                                  const statusTxt =
-                                    s.status === 'active'
-                                      ? 'En curso'
-                                      : s.status === 'confirmed'
-                                      ? 'Confirmado'
-                                      : 'Pendiente confirmar';
-                                  return `
-                                    <div class="flex items-center justify-between text-xs bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
-                                      <span>${formatTimeHHMM(s.startTime)} – ${s.endTime ? formatTimeHHMM(s.endTime) : '...'} (<strong>${formatDurationHM(m)}</strong>)</span>
-                                      <span class="font-semibold text-slate-600">${statusTxt}</span>
-                                    </div>
-                                  `;
-                                })
-                                .join('')}
-                            </div>`
-                      }
-                    </div>
-                  </div>
-
-                  <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-                    <div class="flex items-center justify-between mb-3">
-                      <div>
-                        <h2 class="text-base font-bold text-slate-900">Tareas especiales de hoy</h2>
-                        <p class="text-xs text-slate-500">Marca opcionalmente las tareas que vayas completando.</p>
-                      </div>
-                      <span class="text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700">
-                        ${todayTasks.filter((t) => t.completed).length}/${todayTasks.length}
-                      </span>
-                    </div>
-
-                    ${
-                      todayTasks.length === 0
-                        ? `<div class="p-6 text-center rounded-xl bg-slate-50 border border-dashed border-slate-200 text-xs text-slate-400">
-                            No hay tareas especiales asignadas para hoy.
-                          </div>`
-                        : `<div class="space-y-2.5">
-                            ${todayTasks
-                              .map((t) => {
-                                const pCls = priorityBadge[t.priority] || priorityBadge.media;
-                                return `
-                                  <label class="flex items-start gap-3 p-3 rounded-xl border ${
-                                    t.completed ? 'bg-slate-50 border-slate-200 opacity-75' : 'bg-white border-slate-200 hover:border-indigo-300'
-                                  } cursor-pointer transition">
-                                    <input type="checkbox" ${t.completed ? 'checked' : ''} onchange="toggleTask('${t.id}')" class="mt-1 w-4 h-4 rounded accent-emerald-600 cursor-pointer" />
-                                    <div class="flex-1 min-w-0">
-                                      <div class="flex items-center justify-between gap-2">
-                                        <span class="text-sm font-semibold ${t.completed ? 'line-through text-slate-400' : 'text-slate-800'}">${t.title}</span>
-                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${pCls}">${t.priority}</span>
-                                      </div>
-                                    </div>
-                                  </label>
-                                `;
-                              })
-                              .join('')}
-                          </div>`
-                    }
-                  </div>
-                </div>
-              `
-              : ui.employeeTab === 'calendar'
-              ? renderCalendarPanel(emp.id, false)
-              : renderChatPanel(emp.id, emp.name)
-          }
+          <div id="ownerCalendarEntries" class="space-y-2.5"></div>
         </div>
-      `;
-    }
+      </div>
 
-    function renderOwnerDashboard() {
-      const emp = appState.employees.find((e) => e.id === ui.selectedEmployeeId) || appState.employees[0];
-      if (emp) ui.selectedEmployeeId = emp.id;
-
-      const pendingShifts = appState.shifts.filter((s) => s.status === 'pending');
-      const overtimeAlerts = getOvertimeAlerts();
-      const today = getTodayISO();
-
-      return `
-        <div class="max-w-6xl mx-auto w-full px-4 py-5 flex-1 space-y-5">
-          ${
-            overtimeAlerts.length > 0
-              ? `<div class="p-4 rounded-2xl bg-red-50 border-2 border-red-300 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div class="text-sm font-extrabold text-red-800">⚠️ Alerta de posible olvido de salida (+1h sobre jornada)</div>
-                    <p class="text-xs text-red-700 mt-0.5">
-                      ${overtimeAlerts
-                        .map((a) => `${a.employee.name} lleva ${formatDurationHM(a.workedMinutes)} (límite ${a.allowedHours}h + 1h)`)
-                        .join(' · ')}
-                    </p>
-                  </div>
-                  <button onclick="openOvertimeModal('${overtimeAlerts[0].shift.id}')" class="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold">
-                    Cerrar y ajustar hora real
-                  </button>
-                </div>`
-              : ''
-          }
-
-          <div class="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm flex flex-wrap items-center justify-between gap-4">
-            <div class="flex flex-wrap items-center gap-3">
-              <div>
-                <span class="text-[11px] font-bold uppercase text-indigo-600">${ui.ownerLabel}</span>
-                <h1 class="text-xl font-extrabold text-slate-900">Panel de Gestión del Hogar</h1>
-              </div>
-
-              ${
-                appState.employees.length > 0
-                  ? `<div class="flex items-center gap-2 ml-0 sm:ml-4">
-                      <label class="text-xs font-semibold text-slate-500">Empleada:</label>
-                      <select onchange="changeSelectedEmployee(this.value)" class="rounded-xl border border-slate-300 px-3 py-1.5 text-sm font-semibold bg-slate-50">
-                        ${appState.employees
-                          .map(
-                            (e) =>
-                              `<option value="${e.id}" ${e.id === ui.selectedEmployeeId ? 'selected' : ''}>${e.name} (${getRateForDate(e, today).toFixed(2).replace('.', ',')} €/h)</option>`
-                          )
-                          .join('')}
-                      </select>
-                    </div>`
-                  : ''
-              }
-            </div>
-
-            <div class="flex items-center gap-1.5 flex-wrap bg-slate-100 p-1 rounded-xl">
-              <button onclick="setOwnerTab('overview')" class="px-3 py-1.5 rounded-lg text-xs font-bold ${
-                ui.ownerTab === 'overview' ? 'bg-indigo-600 text-white' : 'text-slate-700 hover:bg-white'
-              }">
-                Confirmaciones (${pendingShifts.length})
-              </button>
-              <button onclick="setOwnerTab('employees')" class="px-3 py-1.5 rounded-lg text-xs font-bold ${
-                ui.ownerTab === 'employees' ? 'bg-indigo-600 text-white' : 'text-slate-700 hover:bg-white'
-              }">
-                Empleadas
-              </button>
-              <button onclick="setOwnerTab('tasks')" class="px-3 py-1.5 rounded-lg text-xs font-bold ${
-                ui.ownerTab === 'tasks' ? 'bg-indigo-600 text-white' : 'text-slate-700 hover:bg-white'
-              }">
-                Tareas especiales
-              </button>
-              <button onclick="setOwnerTab('calendar')" class="px-3 py-1.5 rounded-lg text-xs font-bold ${
-                ui.ownerTab === 'calendar' ? 'bg-indigo-600 text-white' : 'text-slate-700 hover:bg-white'
-              }">
-                Calendario
-              </button>
-              <button onclick="setOwnerTab('chat')" class="px-3 py-1.5 rounded-lg text-xs font-bold ${
-                ui.ownerTab === 'chat'
-                  ? 'bg-indigo-600 text-white'
-                  : emp && ui.unreadChatForEmployee[emp.id]
-                  ? 'bg-amber-300 text-slate-950 chat-alert-glow'
-                  : 'text-slate-700 hover:bg-white'
-              }">
-                Chat ${emp && ui.unreadChatForEmployee[emp.id] ? '●' : ''}
-              </button>
-            </div>
+      <!-- Pestaña 3: Chat Propietario -->
+      <div id="ownPanelChat" class="hidden">
+        <div class="bg-white rounded-3xl border border-warm-200 shadow-xs overflow-hidden flex flex-col h-[65vh] min-h-[420px]">
+          <div class="px-4 py-3 bg-warm-50 border-b border-warm-200 flex items-center justify-between">
+            <h3 id="ownChatTitle" class="font-bold text-slate-900 text-sm">Chat</h3>
+            <span class="text-xs text-slate-500">Avisos automáticos + mensajes</span>
           </div>
-
-          ${
-            ui.ownerTab === 'overview'
-              ? `
-                <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <h2 class="text-base font-bold text-slate-900">Turnos pendientes de confirmar</h2>
-                      <p class="text-xs text-slate-500">Los turnos solo suman al total mensual de horas y euros cuando los confirmas aquí.</p>
-                    </div>
-                  </div>
-
-                  ${
-                    pendingShifts.length === 0
-                      ? `<div class="p-8 text-center rounded-xl bg-slate-50 text-sm text-slate-400">
-                          No hay turnos pendientes de confirmar ahora mismo.
-                        </div>`
-                      : `<div class="space-y-3">
-                          ${pendingShifts
-                            .map((s) => {
-                              const e = appState.employees.find((x) => x.id === s.employeeId);
-                              const mins = Number(s.minutes || 0);
-                              const euros = ((mins / 60) * Number(s.rate || 10)).toFixed(2).replace('.', ',');
-                              return `
-                                <div class="p-4 rounded-xl border border-amber-200 bg-amber-50/40 flex flex-wrap items-center justify-between gap-3">
-                                  <div>
-                                    <div class="font-bold text-slate-900">${e ? e.name : 'Empleada'} · <span class="font-mono text-xs">${s.date}</span></div>
-                                    <div class="text-xs text-slate-600 mt-0.5">
-                                      Entrada ${formatTimeHHMM(s.startTime)} — Salida ${formatTimeHHMM(s.endTime)} · Duración: <strong>${formatDurationHM(mins)}</strong> · Importe: <strong>${euros} €</strong>
-                                    </div>
-                                  </div>
-                                  <div class="flex items-center gap-2">
-                                    <button onclick="confirmShift('${s.id}')" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow">
-                                      Confirmar trabajo
-                                    </button>
-                                    <button onclick="openAdjustShiftModal('${s.id}')" class="px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold">
-                                      Ajustar hora
-                                    </button>
-                                  </div>
-                                </div>
-                              `;
-                            })
-                            .join('')}
-                        </div>`
-                  }
-                </div>
-              `
-              : ui.ownerTab === 'employees'
-              ? `
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                  <form onsubmit="createEmployee(event)" class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3.5">
-                    <h2 class="text-base font-bold text-slate-900">Crear nueva empleada</h2>
-                    <div>
-                      <label class="block text-xs font-semibold text-slate-700 mb-1">Nombre (código por defecto)</label>
-                      <input id="newEmpName" type="text" required placeholder="Ej. Lucía" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-                    </div>
-                    <div>
-                      <label class="block text-xs font-semibold text-slate-700 mb-1">Contraseña para entrar</label>
-                      <input id="newEmpPass" type="text" required placeholder="Contraseña de acceso" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-                    </div>
-                    <div class="grid grid-cols-2 gap-3">
-                      <div>
-                        <label class="block text-xs font-semibold text-slate-700 mb-1">Tarifa por hora (€)</label>
-                        <input id="newEmpRate" type="number" step="0.01" min="0" value="10" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-                      </div>
-                      <div>
-                        <label class="block text-xs font-semibold text-slate-700 mb-1">Horas diarias</label>
-                        <input id="newEmpHours" type="number" step="0.5" min="0.5" value="6" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-                      </div>
-                    </div>
-                    <button type="submit" class="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold">
-                      Añadir empleada
-                    </button>
-                  </form>
-
-                  <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3">
-                    <h2 class="text-base font-bold text-slate-900">Empleadas registradas</h2>
-                    ${appState.employees
-                      .map((e) => {
-                        const currentRate = getRateForDate(e, today);
-                        return `
-                          <div class="p-3.5 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
-                            <div>
-                              <div class="font-bold text-slate-900">${e.name} <span class="text-xs font-mono text-slate-400">(${e.name})</span></div>
-                              <div class="text-xs text-slate-500">
-                                Tarifa actual: <strong>${currentRate.toFixed(2).replace('.', ',')} €/h</strong> · Jornada ref.: <strong>${e.dailyHours}h</strong>
-                              </div>
-                            </div>
-                            <div class="flex items-center gap-2">
-                              <button onclick="openEditEmployeeModal('${e.id}')" class="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-xs font-semibold">
-                                Modificar / Tarifa
-                              </button>
-                              ${
-                                appState.employees.length > 1
-                                  ? `<button onclick="deleteEmployee('${e.id}')" class="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold">
-                                      Eliminar
-                                    </button>`
-                                  : ''
-                              }
-                            </div>
-                          </div>
-                        `;
-                      })
-                      .join('')}
-                  </div>
-                </div>
-              `
-              : ui.ownerTab === 'tasks'
-              ? `
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                  <form onsubmit="addSpecialTask(event)" class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3.5">
-                    <h2 class="text-base font-bold text-slate-900">Asignar tarea especial para ${emp ? emp.name : ''}</h2>
-                    <div>
-                      <label class="block text-xs font-semibold text-slate-700 mb-1">Fecha</label>
-                      <input id="taskDateInput" type="date" value="${today}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-                    </div>
-                    <div>
-                      <label class="block text-xs font-semibold text-slate-700 mb-1">Tarea especial</label>
-                      <input id="taskTitleInput" type="text" required placeholder="Ej. Limpiar horno y campana" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-                    </div>
-                    <div>
-                      <label class="block text-xs font-semibold text-slate-700 mb-1">Prioridad</label>
-                      <select id="taskPriorityInput" class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white">
-                        <option value="alta">Alta (prioritaria)</option>
-                        <option value="media" selected>Media</option>
-                        <option value="baja">Baja</option>
-                      </select>
-                    </div>
-                    <button type="submit" class="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold">
-                      Guardar tarea
-                    </button>
-                  </form>
-
-                  <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-2.5">
-                    <h2 class="text-base font-bold text-slate-900">Tareas de ${emp ? emp.name : ''}</h2>
-                    ${
-                      emp
-                        ? appState.tasks
-                            .filter((t) => t.employeeId === emp.id)
-                            .sort((a, b) => b.date.localeCompare(a.date))
-                            .map(
-                              (t) => `
-                              <div class="p-3 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
-                                <div>
-                                  <div class="text-xs font-mono text-slate-500">${t.date} · <span class="uppercase font-bold">${t.priority}</span></div>
-                                  <div class="text-sm font-semibold ${t.completed ? 'line-through text-slate-400' : 'text-slate-800'}">${t.title}</div>
-                                </div>
-                                <button onclick="deleteTask('${t.id}')" class="px-2.5 py-1 rounded-lg text-xs text-red-600 hover:bg-red-50 font-semibold">
-                                  Quitar
-                                </button>
-                              </div>
-                            `
-                            )
-                            .join('') || `<p class="text-xs text-slate-400">Sin tareas registradas.</p>`
-                        : ''
-                    }
-                  </div>
-                </div>
-              `
-              : ui.ownerTab === 'calendar'
-              ? emp
-                ? renderCalendarPanel(emp.id, true)
-                : ''
-              : emp
-              ? renderChatPanel(emp.id, ui.ownerLabel)
-              : ''
-          }
+          <div id="ownChatMessages" class="flex-1 overflow-y-auto p-4 space-y-2.5 bg-warm-50/40"></div>
+          <form onsubmit="sendChatMessage(event, currentOwnerSelectedEmpId, 'owner')" class="p-3 bg-white border-t border-warm-200 flex gap-2">
+            <input id="ownChatInput" type="text" placeholder="Escribe un mensaje..."
+              class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-warm-50 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            <button type="submit" class="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold cursor-pointer">
+              Enviar
+            </button>
+          </form>
         </div>
-      `;
-    }
+      </div>
 
-    function renderModal() {
-      if (!ui.modal) return '';
-
-      if (ui.modal.type === 'confirm_checkout') {
-        const shift = appState.shifts.find((s) => s.id === ui.modal.shiftId);
-        if (!shift) return '';
-        const elapsed = formatDurationHM((Date.now() - shift.startTime) / 60000);
-        return `
-          <div class="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
-            <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4">
-              <h3 class="text-lg font-extrabold text-slate-900">¿Confirmar fichar salida?</h3>
-              <p class="text-sm text-slate-600">
-                Se detendrá el contador actual (<strong>${elapsed}</strong>) y se enviará el aviso de salida al chat.
-              </p>
-              <div class="flex gap-2 pt-2">
-                <button onclick="closeModal()" class="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold">
-                  Cancelar
-                </button>
-                <button onclick="executeClockOut('${shift.id}')" class="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold">
-                  Sí, fichar salida
-                </button>
-              </div>
-            </div>
-          </div>
-        `;
-      }
-
-      if (ui.modal.type === 'adjust_shift') {
-        const shift = appState.shifts.find((s) => s.id === ui.modal.shiftId);
-        if (!shift) return '';
-        const startDateObj = new Date(shift.startTime);
-        const endDateObj = new Date(shift.endTime || Date.now());
-        const pad = (n) => String(n).padStart(2, '0');
-        const toLocalInput = (d) =>
-          `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-
-        return `
-          <div class="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
-            <form onsubmit="submitAdjustShift(event, '${shift.id}')" class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
-              <h3 class="text-lg font-extrabold text-slate-900">Ajustar turno y confirmar</h3>
-              <p class="text-xs text-slate-500">Corrige la hora real de entrada o salida y confirma para sumar al cálculo mensual.</p>
-
+      <!-- Pestaña 4: Empleadas y Hogar -->
+      <div id="ownPanelAjustes" class="hidden space-y-4">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <!-- Alta / Edición de Empleada -->
+          <div class="bg-white rounded-3xl border border-warm-200 p-5 shadow-xs space-y-3">
+            <h3 id="empFormTitle" class="font-bold text-slate-900">Dar de Alta Empleada</h3>
+            <form onsubmit="saveEmployeeForm(event)" class="space-y-3">
+              <input id="empFormId" type="hidden" />
               <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Hora de entrada</label>
-                <input id="adjStartInput" type="datetime-local" value="${toLocalInput(startDateObj)}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+                <label class="block text-xs font-bold text-slate-600 mb-1">Nombre</label>
+                <input id="empFormName" type="text" required placeholder="Ej. Elena"
+                  class="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-warm-50 text-sm" />
               </div>
-
               <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Hora real de salida</label>
-                <input id="adjEndInput" type="datetime-local" value="${toLocalInput(endDateObj)}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
+                <label class="block text-xs font-bold text-slate-600 mb-1">Contraseña de acceso</label>
+                <input id="empFormPassword" type="text" placeholder="Por defecto el nombre en minúsculas"
+                  class="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-warm-50 text-sm" />
               </div>
-
-              <div class="flex gap-2 pt-2">
-                <button type="button" onclick="closeModal()" class="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold">
-                  Cancelar
-                </button>
-                <button type="submit" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold">
-                  Guardar y confirmar
-                </button>
-              </div>
-            </form>
-          </div>
-        `;
-      }
-
-      if (ui.modal.type === 'edit_employee') {
-        const emp = appState.employees.find((e) => e.id === ui.modal.empId);
-        if (!emp) return '';
-        const today = getTodayISO();
-        const currentRate = getRateForDate(emp, today);
-
-        return `
-          <div class="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
-            <form onsubmit="submitEditEmployee(event, '${emp.id}')" class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-3.5">
-              <h3 class="text-lg font-extrabold text-slate-900">Editar empleada</h3>
-
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Nombre</label>
-                <input id="editEmpName" type="text" value="${emp.name}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Contraseña</label>
-                <input id="editEmpPass" type="text" value="${emp.password}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Horas diarias de referencia</label>
-                <input id="editEmpHours" type="number" step="0.5" min="0.5" value="${emp.dailyHours}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-              </div>
-
-              <div class="p-3 rounded-xl bg-indigo-50/70 border border-indigo-100 space-y-2.5">
-                <div class="text-xs font-bold text-indigo-900">Cambio de tarifa por hora</div>
-                <div class="grid grid-cols-2 gap-2.5">
-                  <div>
-                    <label class="block text-[11px] font-semibold text-slate-700 mb-1">Nueva tarifa (€/h)</label>
-                    <input id="editEmpRate" type="number" step="0.01" min="0" value="${currentRate}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
-                  </div>
-                  <div>
-                    <label class="block text-[11px] font-semibold text-slate-700 mb-1">Aplicar desde fecha</label>
-                    <input id="editEmpRateStart" type="date" value="${today}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm bg-white" />
-                  </div>
+              <div class="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label class="block text-xs font-bold text-slate-600 mb-1">Tarifa por hora (€)</label>
+                  <input id="empFormRate" type="number" step="0.01" min="0" value="10" required
+                    class="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-warm-50 text-sm" />
+                </div>
+                <div>
+                  <label class="block text-xs font-bold text-slate-600 mb-1">Horas diarias</label>
+                  <input id="empFormDailyHours" type="number" step="0.5" min="0.5" max="24" value="4" required
+                    class="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-warm-50 text-sm" />
                 </div>
               </div>
-
-              <div class="flex gap-2 pt-2">
-                <button type="button" onclick="closeModal()" class="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm font-semibold">
-                  Cancelar
-                </button>
-                <button type="submit" class="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold">
-                  Guardar cambios
-                </button>
-              </div>
-            </form>
-          </div>
-        `;
-      }
-
-      if (ui.modal.type === 'cloud_modal') {
-        const empLink = getInviteLink('empleado');
-        const ownerLink = getInviteLink('propietario');
-
-        return `
-          <div class="fixed inset-0 z-50 bg-slate-950/60 flex items-center justify-center p-4">
-            <form onsubmit="submitCloudConfig(event)" class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-              <div class="flex items-center justify-between">
-                <h3 class="text-lg font-extrabold text-slate-900">Enlace de hogar y sincronización en nube</h3>
-                <button type="button" onclick="closeModal()" class="text-slate-400 hover:text-slate-700 font-bold">✕</button>
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold text-slate-700 mb-1">Código de hogar compartido</label>
-                <input id="cloudCodeInput" type="text" value="${appState.householdCode}" required class="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-mono uppercase" />
-              </div>
-
-              <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
-                <label class="flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer">
-                  <input id="cloudEnabledInput" type="checkbox" ${cloudConfig.enabled ? 'checked' : ''} class="w-4 h-4 accent-indigo-600" />
-                  Activar sincronización en nube (Firebase Realtime Database)
+              <div id="empRateEffectiveDateBox" class="hidden">
+                <label class="block text-xs font-bold text-amber-800 mb-1">
+                  Fecha de inicio de la nueva tarifa
                 </label>
-                <input
-                  id="cloudUrlInput"
-                  type="url"
-                  value="${cloudConfig.firebaseDbUrl || ''}"
-                  placeholder="https://tu-proyecto-default-rtdb.europe-west1.firebasedatabase.app"
-                  class="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-mono bg-white"
-                />
-                <p class="text-[11px] text-slate-500">
-                  Si se deja desactivado, funciona en local en este navegador. Con la URL de Firebase se sincroniza entre varios móviles.
-                </p>
+                <input id="empRateEffectiveDate" type="date"
+                  class="w-full px-3.5 py-2 rounded-xl border border-amber-300 bg-amber-50 text-sm font-medium" />
               </div>
-
-              <div class="space-y-2">
-                <div class="text-xs font-bold text-slate-700">Enlaces rápidos para otros dispositivos</div>
-                <div class="p-2.5 rounded-xl bg-indigo-50 border border-indigo-100">
-                  <div class="text-[11px] font-semibold text-indigo-900 mb-1">Enlace Propietario 2, 3...</div>
-                  <div class="flex items-center gap-2">
-                    <input type="text" readonly value="${ownerLink}" class="flex-1 text-[11px] font-mono bg-white border border-indigo-200 rounded-lg px-2 py-1.5" />
-                    <button type="button" onclick="copyText('${ownerLink}')" class="px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold">Copiar</button>
-                  </div>
-                </div>
-
-                <div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
-                  <div class="text-[11px] font-semibold text-emerald-900 mb-1">Enlace Empleado</div>
-                  <div class="flex items-center gap-2">
-                    <input type="text" readonly value="${empLink}" class="flex-1 text-[11px] font-mono bg-white border border-emerald-200 rounded-lg px-2 py-1.5" />
-                    <button type="button" onclick="copyText('${empLink}')" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold">Copiar</button>
-                  </div>
-                </div>
-              </div>
-
-              <div class="flex gap-2 pt-2">
-                <button type="button" onclick="pullFromFirebase(false)" class="px-3 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold">
-                  Sincronizar ahora
+              <div class="flex gap-2">
+                <button type="submit" class="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold cursor-pointer">
+                  Guardar empleada
                 </button>
-                <button type="submit" class="flex-1 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold">
-                  Guardar configuración
+                <button type="button" onclick="resetEmployeeForm()" class="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold cursor-pointer">
+                  Limpiar
                 </button>
               </div>
             </form>
           </div>
-        `;
-      }
 
-      return '';
+          <!-- Lista de Empleadas + Enlace Hogar + Contraseña Máster -->
+          <div class="space-y-4">
+            <div class="bg-white rounded-3xl border border-warm-200 p-5 shadow-xs space-y-3">
+              <h3 class="font-bold text-slate-900">Empleadas registradas</h3>
+              <div id="ownerEmployeesList" class="space-y-2"></div>
+            </div>
+
+            <div class="bg-white rounded-3xl border border-warm-200 p-5 shadow-xs space-y-3">
+              <h3 class="font-bold text-slate-900">Enlace / Código de Hogar</h3>
+              <p class="text-xs text-slate-500">Comparte este enlace para enlazar Propietario 2, 3... o Empleados</p>
+              <div class="flex gap-2">
+                <input id="inviteLinkInput" type="text" readonly
+                  class="flex-1 px-3 py-2 rounded-xl border border-slate-200 bg-warm-50 text-xs font-mono text-slate-700" />
+                <button type="button" onclick="copyInviteLink()"
+                  class="px-3.5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold cursor-pointer">
+                  Copiar
+                </button>
+              </div>
+            </div>
+
+            <div class="bg-white rounded-3xl border border-warm-200 p-5 shadow-xs space-y-3">
+              <h3 class="font-bold text-slate-900">Contraseña Máster del Hogar</h3>
+              <form onsubmit="updateMasterPassword(event)" class="flex gap-2">
+                <input id="newMasterPasswordInput" type="password" required placeholder="Nueva contraseña máster"
+                  class="flex-1 px-3 py-2 rounded-xl border border-slate-200 bg-warm-50 text-sm" />
+                <button type="submit" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold cursor-pointer">
+                  Cambiar
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal Confirmación Salida -->
+  <div id="clockOutModal" class="fixed inset-0 z-50 bg-slate-900/50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-xl space-y-4">
+      <h3 class="text-lg font-bold text-slate-900">Confirmar fichaje de salida</h3>
+      <p class="text-sm text-slate-600">
+        ¿Deseas fichar la salida ahora? El turno quedará pendiente de confirmación por un propietario.
+      </p>
+      <div class="grid grid-cols-2 gap-2.5 pt-1">
+        <button type="button" onclick="closeClockOutModal()"
+          class="py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm cursor-pointer">
+          Cancelar
+        </button>
+        <button type="button" onclick="confirmClockOut()"
+          class="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm cursor-pointer">
+          Sí, fichar salida
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Editar Turno (Propietario) -->
+  <div id="editShiftModal" class="fixed inset-0 z-50 bg-slate-900/50 hidden items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-sm w-full p-6 shadow-xl space-y-4">
+      <h3 class="text-lg font-bold text-slate-900">Ajustar turno</h3>
+      <form onsubmit="saveEditedShift(event)" class="space-y-3">
+        <input id="editShiftId" type="hidden" />
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1">Fecha</label>
+          <input id="editShiftDate" type="date" required class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1">Hora de entrada</label>
+          <input id="editShiftStart" type="datetime-local" required class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-500 mb-1">Hora de salida</label>
+          <input id="editShiftEnd" type="datetime-local" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm" />
+        </div>
+        <div class="flex items-center gap-2 pt-1">
+          <input id="editShiftConfirmNow" type="checkbox" checked class="w-4 h-4 rounded text-brand-600" />
+          <label for="editShiftConfirmNow" class="text-xs font-semibold text-slate-700">Confirmar turno al guardar</label>
+        </div>
+        <div class="grid grid-cols-2 gap-2.5 pt-2">
+          <button type="button" onclick="closeEditShiftModal()"
+            class="py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm cursor-pointer">
+            Cancelar
+          </button>
+          <button type="submit"
+            class="py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-sm cursor-pointer">
+            Guardar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+    import {
+      getDatabase, ref, set, update, remove, push, onValue
+    } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+
+    const FIREBASE_URL = "https://hogarcontrol-65d91-default-rtdb.europe-west1.firebasedatabase.app/";
+    const app = initializeApp({ databaseURL: FIREBASE_URL });
+    const db = getDatabase(app);
+
+    // Estado global en memoria
+    let currentHomeCode = "";
+    let currentUser = null; // { role: 'owner' | 'employee', employeeId?: string, name: string }
+    let editModeActive = false;
+    let currentOwnerSelectedEmpId = "";
+    let currentEmpTab = "fichaje";
+    let currentOwnerTab = "panel";
+
+    let homeData = {
+      masterPasswordHash: null,
+      employees: {},
+      shifts: {},
+      tasks: {},
+      chats: {},
+      monthClosures: {},
+      overtimeAlerts: {}
+    };
+
+    let lastSeenChatCountByEmp = {};
+    let isFirstChatLoad = true;
+    let audioCtx = null;
+
+    // --- Utilidades de fecha y formato ---
+    function toDateStr(ms) {
+      const d = new Date(ms);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
     }
 
-    function render() {
-      const root = document.getElementById('app');
-      let bodyHtml = '';
-
-      if (ui.view === 'landing') bodyHtml = renderLanding();
-      else if (ui.view === 'owner_auth') bodyHtml = renderOwnerAuth();
-      else if (ui.view === 'owner_dash') bodyHtml = renderOwnerDashboard();
-      else if (ui.view === 'emp_select') bodyHtml = renderEmployeeSelect();
-      else if (ui.view === 'emp_auth') bodyHtml = renderEmployeeAuth();
-      else if (ui.view === 'emp_space') bodyHtml = renderEmployeeSpace();
-
-      const toastHtml = ui.toast
-        ? `<div class="fixed bottom-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg text-xs font-bold text-white ${
-            ui.toast.type === 'error' ? 'bg-red-600' : ui.toast.type === 'success' ? 'bg-emerald-600' : 'bg-slate-900'
-          }">${ui.toast.msg}</div>`
-        : '';
-
-      root.innerHTML = `
-        ${renderHeader()}
-        ${bodyHtml}
-        ${renderModal()}
-        ${toastHtml}
-      `;
+    function toMonthStr(ms = Date.now()) {
+      const d = new Date(ms);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      return `${y}-${m}`;
     }
 
-    window.goLanding = () => {
-      ui.view = 'landing';
-      ui.authError = '';
-      render();
-    };
+    function toDatetimeLocalValue(ms) {
+      if (!ms) return "";
+      const d = new Date(ms);
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
 
-    window.selectRole = (role) => {
-      ui.authError = '';
-      if (role === 'owner') {
-        ui.view = ui.editModeUnlocked ? 'owner_dash' : 'owner_auth';
+    function formatTimeHM(ms) {
+      if (!ms) return "--:--";
+      const d = new Date(ms);
+      return d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function formatDurationHM(totalMs) {
+      const safeMs = Math.max(0, totalMs || 0);
+      const totalMinutes = Math.floor(safeMs / 60000);
+      const hours = Math.floor(totalMinutes / 60);
+      const mins = totalMinutes % 60;
+      return `${hours}h ${String(mins).padStart(2, "0")}m`;
+    }
+
+    function formatEuroExact(amount) {
+      return `${(amount || 0).toLocaleString("es-ES", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 4
+      })} €`;
+    }
+
+    async function hashString(str) {
+      const enc = new TextEncoder().encode(str);
+      const buf = await crypto.subtle.digest("SHA-256", enc);
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    // Sonido único de llegada por Web Audio API
+    function playChatNotificationSound() {
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === "suspended") {
+          audioCtx.resume();
+        }
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.exponentialRampToValueAtTime(1174.66, now + 0.12);
+
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now);
+        osc.stop(now + 0.25);
+      } catch (_) {}
+    }
+
+    // --- Tarifa vigente en una fecha ---
+    function getRateForDate(emp, dateStr) {
+      if (!emp) return 10;
+      const history = Array.isArray(emp.rateHistory) ? [...emp.rateHistory] : [];
+      if (history.length === 0) {
+        return Number(emp.hourlyRate ?? 10);
+      }
+      history.sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+      let applicable = Number(history[0].rate);
+      for (const item of history) {
+        if (item.effectiveFrom <= dateStr) {
+          applicable = Number(item.rate);
+        }
+      }
+      return applicable;
+    }
+
+    // --- Cálculo de duración y pago de turnos (sin redondeo) ---
+    function getShiftDurationMs(shift, nowMs = Date.now()) {
+      if (!shift.startAt) return 0;
+      const end = shift.endAt || nowMs;
+      return Math.max(0, end - shift.startAt);
+    }
+
+    function calculateMonthStats(empId, monthStr) {
+      const emp = homeData.employees?.[empId];
+      if (!emp) return { daysCount: 0, confirmedMs: 0, totalAmount: 0, shiftsInMonth: [] };
+
+      const allShifts = Object.entries(homeData.shifts || {})
+        .map(([id, s]) => ({ id, ...s }))
+        .filter(s => s.employeeId === empId && (s.date || toDateStr(s.startAt)).startsWith(monthStr))
+        .sort((a, b) => (a.startAt || 0) - (b.startAt || 0));
+
+      const confirmedDays = new Set();
+      let confirmedMs = 0;
+      let totalAmount = 0;
+
+      for (const s of allShifts) {
+        const dateKey = s.date || toDateStr(s.startAt);
+        const durMs = getShiftDurationMs(s);
+        if (s.status === "confirmed" && s.endAt) {
+          confirmedDays.add(dateKey);
+          confirmedMs += durMs;
+          const hoursExact = durMs / 3600000;
+          const rate = getRateForDate(emp, dateKey);
+          totalAmount += hoursExact * rate;
+        }
+      }
+
+      return {
+        daysCount: confirmedDays.size,
+        confirmedMs,
+        totalAmount,
+        shiftsInMonth: allShifts
+      };
+    }
+
+    // --- Inicialización de URL y código de hogar ---
+    function initFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const codeParam = params.get("hogar");
+      const savedLocal = JSON.parse(localStorage.getItem("hogarcontrol_last_session") || "null");
+
+      if (codeParam) {
+        document.getElementById("loginHomeCode").value = codeParam.toUpperCase();
+        attachHomeListener(codeParam.trim().toUpperCase());
+      } else if (savedLocal?.homeCode) {
+        document.getElementById("loginHomeCode").value = savedLocal.homeCode;
+        attachHomeListener(savedLocal.homeCode);
       } else {
-        ui.view = 'emp_select';
+        setSyncStatus("listo", "bg-slate-400");
       }
-      render();
+
+      const todayStr = toDateStr(Date.now());
+      const curMonth = toMonthStr(Date.now());
+      document.getElementById("taskDateInput").value = todayStr;
+      document.getElementById("empMonthPicker").value = curMonth;
+      document.getElementById("ownerMonthPicker").value = curMonth;
+      document.getElementById("paidDateInput").value = todayStr;
+    }
+
+    window.generateNewHomeCode = function () {
+      const rand = Math.floor(1000 + Math.random() * 9000);
+      const code = `HOGAR-${rand}`;
+      document.getElementById("loginHomeCode").value = code;
+      attachHomeListener(code);
     };
 
-    window.submitOwnerAuth = (e) => {
-      e.preventDefault();
-      const pass = document.getElementById('ownerPassInput').value;
-      const label = document.getElementById('ownerLabelInput').value;
-      if (pass === appState.masterPassword) {
-        ui.ownerLabel = label;
-        ui.editModeUnlocked = true;
-        ui.authError = '';
-        ui.view = 'owner_dash';
-        render();
-      } else {
-        ui.authError = 'Contraseña incorrecta.';
-        render();
+    function setSyncStatus(label, dotClass) {
+      document.getElementById("syncText").textContent = label;
+      document.getElementById("syncDot").className = `w-2 h-2 rounded-full ${dotClass}`;
+    }
+
+    let unsubscribeHome = null;
+
+    function attachHomeListener(code) {
+      if (!code) return;
+      currentHomeCode = code;
+      setSyncStatus("Sincronizando", "bg-amber-400");
+
+      if (typeof unsubscribeHome === "function") {
+        unsubscribeHome();
       }
-    };
 
-    window.chooseEmployeeForAuth = (empId) => {
-      ui.selectedEmployeeId = empId;
-      ui.authError = '';
-      ui.view = 'emp_auth';
-      render();
-    };
+      const homeRef = ref(db, `homes/${code}`);
+      unsubscribeHome = onValue(homeRef, (snap) => {
+        setSyncStatus("En línea", "bg-emerald-500");
+        const val = snap.val() || {};
+        homeData = {
+          masterPasswordHash: val.masterPasswordHash || null,
+          employees: val.employees || {},
+          shifts: val.shifts || {},
+          tasks: val.tasks || {},
+          chats: val.chats || {},
+          monthClosures: val.monthClosures || {},
+          overtimeAlerts: val.overtimeAlerts || {}
+        };
+        localStorage.setItem(`hogarcontrol_cache_${code}`, JSON.stringify(homeData));
 
-    window.submitEmployeeAuth = (e) => {
-      e.preventDefault();
-      const emp = appState.employees.find((x) => x.id === ui.selectedEmployeeId);
-      const pass = document.getElementById('empPassInput').value;
-      if (emp && pass === emp.password) {
-        ui.authError = '';
-        ui.employeeTab = 'home';
-        ui.view = 'emp_space';
-        render();
-      } else {
-        ui.authError = 'Contraseña incorrecta.';
-        render();
-      }
-    };
+        document.getElementById("ownerFirstTimeHint").classList.toggle("hidden", Boolean(homeData.masterPasswordHash));
+        populateEmployeeLoginSelect();
+        renderAllActiveViews();
+      }, () => {
+        const cached = localStorage.getItem(`hogarcontrol_cache_${code}`);
+        if (cached) {
+          homeData = JSON.parse(cached);
+        }
+        setSyncStatus("Sin conexión", "bg-rose-500");
+        populateEmployeeLoginSelect();
+        renderAllActiveViews();
+      });
+    }
 
-    window.setEmployeeTab = (tab) => {
-      ui.employeeTab = tab;
-      if (tab === 'chat' && ui.selectedEmployeeId) {
-        markChatRead(ui.selectedEmployeeId);
-      }
-      render();
-    };
+    document.getElementById("loginHomeCode").addEventListener("change", (e) => {
+      const val = e.target.value.trim().toUpperCase();
+      if (val) attachHomeListener(val);
+    });
 
-    window.setOwnerTab = (tab) => {
-      ui.ownerTab = tab;
-      if (tab === 'chat' && ui.selectedEmployeeId) {
-        markChatRead(ui.selectedEmployeeId);
-      }
-      render();
-    };
-
-    window.changeSelectedEmployee = (empId) => {
-      ui.selectedEmployeeId = empId;
-      ui.selectedCalendarDate = getTodayISO();
-      render();
-    };
-
-    window.clockIn = clockIn;
-
-    window.requestClockOutConfirm = (shiftId) => {
-      if (!shiftId) return;
-      ui.modal = { type: 'confirm_checkout', shiftId };
-      render();
-    };
-
-    window.executeClockOut = executeClockOut;
-    window.confirmShift = confirmShift;
-    window.toggleTask = toggleTask;
-
-    window.closeModal = () => {
-      ui.modal = null;
-      render();
-    };
-
-    window.openAdjustShiftModal = (shiftId) => {
-      ui.modal = { type: 'adjust_shift', shiftId };
-      render();
-    };
-
-    window.openOvertimeModal = (shiftId) => {
-      ui.modal = { type: 'adjust_shift', shiftId };
-      render();
-    };
-
-    window.submitAdjustShift = async (e, shiftId) => {
-      e.preventDefault();
-      const startVal = new Date(document.getElementById('adjStartInput').value).getTime();
-      const endVal = new Date(document.getElementById('adjEndInput').value).getTime();
-      if (isNaN(startVal) || isNaN(endVal) || endVal <= startVal) {
-        showToast('La hora de salida debe ser posterior a la de entrada.', 'error');
+    function populateEmployeeLoginSelect() {
+      const select = document.getElementById("employeeSelectLogin");
+      const list = Object.entries(homeData.employees || {});
+      if (list.length === 0) {
+        select.innerHTML = `<option value="">No hay empleadas registradas aún</option>`;
         return;
       }
-      const shift = appState.shifts.find((s) => s.id === shiftId);
-      if (!shift) return;
-      shift.startTime = startVal;
-      shift.date = new Date(startVal).toISOString().slice(0, 10);
-      await confirmShift(shiftId, endVal);
-    };
+      const prev = select.value;
+      select.innerHTML = `<option value="">Elige tu nombre...</option>` + list
+        .map(([id, emp]) => `<option value="${id}">${escapeHtml(emp.name)}</option>`)
+        .join("");
+      if (prev && homeData.employees[prev]) {
+        select.value = prev;
+      }
+    }
 
-    window.changeCalendarMonth = (delta) => {
-      const [y, m] = ui.calendarMonth.split('-').map(Number);
-      const d = new Date(y, m - 1 + delta, 1);
-      ui.calendarMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      render();
-    };
+    // --- Login y Roles ---
+    let selectedLoginRole = "owner";
 
-    window.selectCalendarDay = (dateStr) => {
-      ui.selectedCalendarDate = dateStr;
-      render();
-    };
-
-    window.toggleCloseMonth = async (empId, monthKey) => {
-      const key = `${empId}_${monthKey}`;
-      if (appState.closedMonths[key]) {
-        delete appState.closedMonths[key];
-        showToast('Mes reabierto.', 'info');
+    window.selectRole = function (role) {
+      selectedLoginRole = role;
+      const ownerBtn = document.getElementById("roleOwnerBtn");
+      const empBtn = document.getElementById("roleEmployeeBtn");
+      if (role === "owner") {
+        ownerBtn.className = "py-3 px-4 rounded-2xl border-2 border-brand-600 bg-brand-50 text-brand-700 font-bold text-sm transition cursor-pointer";
+        empBtn.className = "py-3 px-4 rounded-2xl border border-slate-200 bg-white text-slate-600 font-bold text-sm hover:bg-slate-50 transition cursor-pointer";
+        document.getElementById("ownerLoginBox").classList.remove("hidden");
+        document.getElementById("employeeLoginBox").classList.add("hidden");
       } else {
-        appState.closedMonths[key] = getTodayISO();
-        showToast('Cierre de mes marcado.', 'success');
+        empBtn.className = "py-3 px-4 rounded-2xl border-2 border-brand-600 bg-brand-50 text-brand-700 font-bold text-sm transition cursor-pointer";
+        ownerBtn.className = "py-3 px-4 rounded-2xl border border-slate-200 bg-white text-slate-600 font-bold text-sm hover:bg-slate-50 transition cursor-pointer";
+        document.getElementById("employeeLoginBox").classList.remove("hidden");
+        document.getElementById("ownerLoginBox").classList.add("hidden");
       }
-      await saveState(true);
-      render();
+      document.getElementById("loginError").classList.add("hidden");
     };
 
-    window.submitChatMessage = async (e, empId, senderName) => {
-      e.preventDefault();
-      const input = document.getElementById('chatInputField');
-      if (!input) return;
-      const text = input.value;
-      input.value = '';
-      await addChatMessage(empId, senderName, text);
-    };
+    window.handleLogin = async function () {
+      const code = document.getElementById("loginHomeCode").value.trim().toUpperCase();
+      const errEl = document.getElementById("loginError");
+      errEl.classList.add("hidden");
 
-    window.createEmployee = async (e) => {
-      e.preventDefault();
-      const name = document.getElementById('newEmpName').value.trim();
-      const password = document.getElementById('newEmpPass').value;
-      const rate = parseFloat(document.getElementById('newEmpRate').value);
-      const dailyHours = parseFloat(document.getElementById('newEmpHours').value);
-      if (!name || !password) return;
+      if (!code) {
+        showLoginError("Introduce o genera un código de hogar.");
+        return;
+      }
+      attachHomeListener(code);
 
-      const id = `emp_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
-      appState.employees.push({
-        id,
-        name,
-        password,
-        dailyHours: isNaN(dailyHours) ? 6 : dailyHours,
-        rates: [{ rate: isNaN(rate) ? 10 : rate, startDate: '2026-01-01' }]
-      });
-      ui.selectedEmployeeId = id;
-      await saveState(true);
-      showToast(`Empleada "${name}" creada.`, 'success');
-      render();
-    };
-
-    window.openEditEmployeeModal = (empId) => {
-      ui.modal = { type: 'edit_employee', empId };
-      render();
-    };
-
-    window.submitEditEmployee = async (e, empId) => {
-      e.preventDefault();
-      const emp = appState.employees.find((x) => x.id === empId);
-      if (!emp) return;
-
-      const name = document.getElementById('editEmpName').value.trim();
-      const password = document.getElementById('editEmpPass').value;
-      const dailyHours = parseFloat(document.getElementById('editEmpHours').value);
-      const newRate = parseFloat(document.getElementById('editEmpRate').value);
-      const startDate = document.getElementById('editEmpRateStart').value;
-
-      if (name) emp.name = name;
-      if (password) emp.password = password;
-      if (!isNaN(dailyHours)) emp.dailyHours = dailyHours;
-
-      if (!isNaN(newRate) && startDate) {
-        const existingIdx = emp.rates.findIndex((r) => r.startDate === startDate);
-        if (existingIdx >= 0) {
-          emp.rates[existingIdx].rate = newRate;
-        } else {
-          emp.rates.push({ rate: newRate, startDate });
+      if (selectedLoginRole === "owner") {
+        const pass = document.getElementById("ownerPasswordInput").value;
+        if (!pass) {
+          showLoginError("Introduce la contraseña máster.");
+          return;
         }
-        emp.rates.sort((a, b) => a.startDate.localeCompare(b.startDate));
-      }
+        const passHash = await hashString(pass);
 
-      ui.modal = null;
-      await saveState(true);
-      showToast('Datos y tarifa actualizados.', 'success');
-      render();
+        if (!homeData.masterPasswordHash) {
+          await set(ref(db, `homes/${code}/masterPasswordHash`), passHash);
+          homeData.masterPasswordHash = passHash;
+        } else if (passHash !== homeData.masterPasswordHash) {
+          showLoginError("Contraseña máster incorrecta.");
+          return;
+        }
+
+        currentUser = { role: "owner", name: "Propietario" };
+        editModeActive = false;
+        localStorage.setItem("hogarcontrol_last_session", JSON.stringify({ homeCode: code }));
+        enterOwnerApp();
+      } else {
+        const empId = document.getElementById("employeeSelectLogin").value;
+        const empPass = document.getElementById("employeePasswordInput").value;
+        if (!empId) {
+          showLoginError("Selecciona tu nombre.");
+          return;
+        }
+        const emp = homeData.employees?.[empId];
+        if (!emp) {
+          showLoginError("Empleada no encontrada.");
+          return;
+        }
+        const expectedHash = emp.passwordHash || await hashString(emp.name.toLowerCase());
+        const inputHash = await hashString(empPass);
+        if (inputHash !== expectedHash) {
+          showLoginError("Contraseña incorrecta.");
+          return;
+        }
+
+        currentUser = { role: "employee", employeeId: empId, name: emp.name };
+        localStorage.setItem("hogarcontrol_last_session", JSON.stringify({ homeCode: code }));
+        enterEmployeeApp();
+      }
     };
 
-    window.deleteEmployee = async (empId) => {
-      if (appState.employees.length <= 1) return;
-      appState.employees = appState.employees.filter((e) => e.id !== empId);
-      if (ui.selectedEmployeeId === empId) {
-        ui.selectedEmployeeId = appState.employees[0]?.id || null;
-      }
-      await saveState(true);
-      showToast('Empleada eliminada.', 'info');
-      render();
+    function showLoginError(msg) {
+      const el = document.getElementById("loginError");
+      el.textContent = msg;
+      el.classList.remove("hidden");
+    }
+
+    window.logoutSession = function () {
+      currentUser = null;
+      editModeActive = false;
+      document.getElementById("loginView").classList.remove("hidden");
+      document.getElementById("employeeView").classList.add("hidden");
+      document.getElementById("ownerView").classList.add("hidden");
+      document.getElementById("headerActions").classList.add("hidden");
+      document.getElementById("headerSubtitle").textContent = "Sin sesión iniciada";
+      document.getElementById("globalAlerts").innerHTML = "";
     };
 
-    window.addSpecialTask = async (e) => {
-      e.preventDefault();
-      const emp = appState.employees.find((x) => x.id === ui.selectedEmployeeId);
-      if (!emp) return;
-      const date = document.getElementById('taskDateInput').value;
-      const title = document.getElementById('taskTitleInput').value.trim();
-      const priority = document.getElementById('taskPriorityInput').value;
-      if (!date || !title) return;
+    function enterEmployeeApp() {
+      document.getElementById("loginView").classList.add("hidden");
+      document.getElementById("ownerView").classList.add("hidden");
+      document.getElementById("employeeView").classList.remove("hidden");
+      document.getElementById("headerActions").classList.remove("hidden");
+      document.getElementById("editModeBtn").classList.add("hidden");
+      document.getElementById("headerSubtitle").textContent = `${currentHomeCode} · ${currentUser.name}`;
+      document.getElementById("empGreetingName").textContent = `Hola, ${currentUser.name}`;
+      switchEmpTab("fichaje");
+      renderAllActiveViews();
+    }
 
-      appState.tasks.push({
-        id: `tk_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
-        employeeId: emp.id,
-        date,
-        title,
-        priority,
-        completed: false
+    function enterOwnerApp() {
+      document.getElementById("loginView").classList.add("hidden");
+      document.getElementById("employeeView").classList.add("hidden");
+      document.getElementById("ownerView").classList.remove("hidden");
+      document.getElementById("headerActions").classList.remove("hidden");
+      document.getElementById("editModeBtn").classList.remove("hidden");
+      updateEditModeButton();
+      document.getElementById("headerSubtitle").textContent = `${currentHomeCode} · Propietario`;
+
+      const empIds = Object.keys(homeData.employees || {});
+      if (!currentOwnerSelectedEmpId || !homeData.employees[currentOwnerSelectedEmpId]) {
+        currentOwnerSelectedEmpId = empIds[0] || "";
+      }
+      switchOwnerTab("panel");
+      renderAllActiveViews();
+    }
+
+    window.toggleEditMode = function () {
+      editModeActive = !editModeActive;
+      updateEditModeButton();
+      renderAllActiveViews();
+    };
+
+    function updateEditModeButton() {
+      const btn = document.getElementById("editModeBtn");
+      if (editModeActive) {
+        btn.textContent = "Modo Edición: ON";
+        btn.className = "px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500 text-white cursor-pointer";
+      } else {
+        btn.textContent = "Modo Edición: OFF";
+        btn.className = "px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 cursor-pointer";
+      }
+    }
+
+    // --- Pestañas ---
+    window.switchEmpTab = function (tab) {
+      currentEmpTab = tab;
+      document.getElementById("empPanelFichaje").classList.toggle("hidden", tab !== "fichaje");
+      document.getElementById("empPanelCalendario").classList.toggle("hidden", tab !== "calendario");
+      document.getElementById("empPanelChat").classList.toggle("hidden", tab !== "chat");
+
+      const tabs = { fichaje: "empTabFichaje", calendario: "empTabCalendario", chat: "empTabChat" };
+      for (const [k, id] of Object.entries(tabs)) {
+        const el = document.getElementById(id);
+        el.classList.remove("tab-alert");
+        if (k === tab) {
+          el.className = "py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold bg-brand-600 text-white transition cursor-pointer flex items-center justify-center gap-1.5";
+        } else {
+          el.className = "py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-warm-50 transition cursor-pointer flex items-center justify-center gap-1.5";
+        }
+      }
+      if (tab === "chat") {
+        clearChatBadge(currentUser.employeeId, "empChatBadge", "empTabChat");
+      }
+      renderAllActiveViews();
+    };
+
+    window.switchOwnerTab = function (tab) {
+      currentOwnerTab = tab;
+      document.getElementById("ownPanelFichajes").classList.toggle("hidden", tab !== "panel");
+      document.getElementById("ownPanelCalendario").classList.toggle("hidden", tab !== "calendario");
+      document.getElementById("ownPanelChat").classList.toggle("hidden", tab !== "chat");
+      document.getElementById("ownPanelAjustes").classList.toggle("hidden", tab !== "ajustes");
+
+      const tabs = {
+        panel: "ownTabPanel",
+        calendario: "ownTabCalendario",
+        chat: "ownTabChat",
+        ajustes: "ownTabAjustes"
+      };
+      for (const [k, id] of Object.entries(tabs)) {
+        const el = document.getElementById(id);
+        el.classList.remove("tab-alert");
+        if (k === tab) {
+          el.className = "flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold bg-brand-600 text-white transition cursor-pointer flex items-center justify-center gap-1.5";
+        } else {
+          el.className = "flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-warm-50 transition cursor-pointer flex items-center justify-center gap-1.5";
+        }
+      }
+      if (tab === "chat") {
+        clearChatBadge(currentOwnerSelectedEmpId, "ownChatBadge", "ownTabChat");
+      }
+      renderAllActiveViews();
+    };
+
+    function clearChatBadge(empId, badgeId, tabId) {
+      if (!empId) return;
+      const msgs = Object.values(homeData.chats?.[empId] || {});
+      lastSeenChatCountByEmp[empId] = msgs.length;
+      const badge = document.getElementById(badgeId);
+      if (badge) {
+        badge.textContent = "0";
+        badge.classList.add("hidden");
+      }
+      document.getElementById(tabId)?.classList.remove("tab-alert");
+    }
+
+    // --- Fichaje Entrada / Salida ---
+    window.clockIn = async function () {
+      if (!currentUser || currentUser.role !== "employee") return;
+      const empId = currentUser.employeeId;
+      const now = Date.now();
+      const dateStr = toDateStr(now);
+
+      const activeShift = Object.values(homeData.shifts || {}).find(
+        s => s.employeeId === empId && !s.endAt
+      );
+      if (activeShift) return;
+
+      const shiftRef = push(ref(db, `homes/${currentHomeCode}/shifts`));
+      await set(shiftRef, {
+        employeeId: empId,
+        date: dateStr,
+        startAt: now,
+        endAt: null,
+        status: "in_progress",
+        overtimeNotified: false
       });
-      await saveState(true);
-      showToast('Tarea especial añadida.', 'success');
-      render();
-    };
 
-    window.deleteTask = async (taskId) => {
-      appState.tasks = appState.tasks.filter((t) => t.id !== taskId);
-      await saveState(true);
-      render();
-    };
-
-    window.openCloudModal = () => {
-      ui.modal = { type: 'cloud_modal' };
-      render();
-    };
-
-    window.submitCloudConfig = async (e) => {
-      e.preventDefault();
-      const code = document.getElementById('cloudCodeInput').value.trim().toUpperCase();
-      const enabled = document.getElementById('cloudEnabledInput').checked;
-      const url = document.getElementById('cloudUrlInput').value.trim().replace(/\/+$/, '');
-
-      if (code) appState.householdCode = code;
-      cloudConfig = { enabled, firebaseDbUrl: url };
-      saveCloudConfig(cloudConfig);
-      ui.modal = null;
-      await saveState(true);
-      if (enabled && url) {
-        await pullFromFirebase(false);
-      }
-      showToast('Configuración de enlace y nube guardada.', 'success');
-      render();
-    };
-
-    window.copyText = (txt) => {
-      navigator.clipboard?.writeText(txt).then(
-        () => showToast('Enlace copiado al portapapeles.', 'success'),
-        () => showToast('Selecciona y copia el enlace manualmente.', 'info')
+      await pushSystemChatMessage(
+        empId,
+        `Entrada fichada por ${currentUser.name} a las ${formatTimeHM(now)} (${dateStr}).`
       );
     };
 
-    setInterval(() => {
-      if (ui.view === 'emp_space' && ui.employeeTab === 'home') {
-        const emp = appState.employees.find((e) => e.id === ui.selectedEmployeeId);
-        const activeShift = emp ? getActiveShift(emp.id) : null;
-        const elHMS = document.getElementById('liveChronoDisplay');
-        const elHM = document.getElementById('liveChronoHM');
-        if (activeShift && elHMS && elHM) {
-          const diffMs = Date.now() - activeShift.startTime;
-          elHMS.textContent = formatDurationHMS(diffMs);
-          elHM.textContent = formatDurationHM(diffMs / 60000);
+    window.requestClockOut = function () {
+      const empId = currentUser?.employeeId;
+      const activeShift = Object.values(homeData.shifts || {}).find(
+        s => s.employeeId === empId && !s.endAt
+      );
+      if (!activeShift) return;
+      const modal = document.getElementById("clockOutModal");
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+    };
+
+    window.closeClockOutModal = function () {
+      const modal = document.getElementById("clockOutModal");
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+    };
+
+    window.confirmClockOut = async function () {
+      closeClockOutModal();
+      const empId = currentUser?.employeeId;
+      if (!empId) return;
+
+      const entry = Object.entries(homeData.shifts || {}).find(
+        ([_, s]) => s.employeeId === empId && !s.endAt
+      );
+      if (!entry) return;
+
+      const [shiftId, shift] = entry;
+      const now = Date.now();
+      const durMs = Math.max(0, now - shift.startAt);
+
+      await update(ref(db, `homes/${currentHomeCode}/shifts/${shiftId}`), {
+        endAt: now,
+        status: "pending"
+      });
+
+      await pushSystemChatMessage(
+        empId,
+        `Salida fichada por ${currentUser.name} a las ${formatTimeHM(now)} (${formatDurationHM(durMs)}). Turno PENDIENTE DE CONFIRMACIÓN por un propietario.`
+      );
+    };
+
+    // --- Confirmar / Ajustar turno desde Propietario ---
+    window.confirmShift = async function (shiftId) {
+      const shift = homeData.shifts?.[shiftId];
+      if (!shift || !shift.endAt) return;
+
+      await update(ref(db, `homes/${currentHomeCode}/shifts/${shiftId}`), {
+        status: "confirmed",
+        confirmedAt: Date.now()
+      });
+
+      const empName = homeData.employees?.[shift.employeeId]?.name || "Empleada";
+      const durStr = formatDurationHM(getShiftDurationMs(shift));
+      await pushSystemChatMessage(
+        shift.employeeId,
+        `Turno del ${shift.date} (${formatTimeHM(shift.startAt)}–${formatTimeHM(shift.endAt)}, ${durStr}) CONFIRMADO para ${empName}.`
+      );
+    };
+
+    window.openEditShiftModal = function (shiftId) {
+      const shift = homeData.shifts?.[shiftId];
+      if (!shift) return;
+      document.getElementById("editShiftId").value = shiftId;
+      document.getElementById("editShiftDate").value = shift.date || toDateStr(shift.startAt);
+      document.getElementById("editShiftStart").value = toDatetimeLocalValue(shift.startAt);
+      document.getElementById("editShiftEnd").value = toDatetimeLocalValue(shift.endAt);
+      document.getElementById("editShiftConfirmNow").checked = true;
+
+      const modal = document.getElementById("editShiftModal");
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+    };
+
+    window.closeEditShiftModal = function () {
+      const modal = document.getElementById("editShiftModal");
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+    };
+
+    window.saveEditedShift = async function (e) {
+      e.preventDefault();
+      const shiftId = document.getElementById("editShiftId").value;
+      const shift = homeData.shifts?.[shiftId];
+      if (!shift) return;
+
+      const newDate = document.getElementById("editShiftDate").value;
+      const startMs = new Date(document.getElementById("editShiftStart").value).getTime();
+      const endRaw = document.getElementById("editShiftEnd").value;
+      const endMs = endRaw ? new Date(endRaw).getTime() : null;
+      const confirmNow = document.getElementById("editShiftConfirmNow").checked;
+
+      let nextStatus = shift.status;
+      if (endMs && confirmNow) {
+        nextStatus = "confirmed";
+      } else if (endMs && shift.status === "in_progress") {
+        nextStatus = "pending";
+      }
+
+      await update(ref(db, `homes/${currentHomeCode}/shifts/${shiftId}`), {
+        date: newDate,
+        startAt: startMs,
+        endAt: endMs,
+        status: nextStatus
+      });
+
+      closeEditShiftModal();
+
+      const statusText = nextStatus === "confirmed" ? "CONFIRMADO" : "AJUSTADO";
+      await pushSystemChatMessage(
+        shift.employeeId,
+        `Turno del ${newDate} ${statusText} (${formatTimeHM(startMs)}${endMs ? `–${formatTimeHM(endMs)}` : ""}).`
+      );
+    };
+
+    // --- Tareas en tiempo real ---
+    window.addDailyTask = async function (e) {
+      e.preventDefault();
+      const empId = currentOwnerSelectedEmpId;
+      if (!empId) return;
+      const date = document.getElementById("taskDateInput").value;
+      const title = document.getElementById("taskTitleInput").value.trim();
+      if (!date || !title) return;
+
+      const taskRef = push(ref(db, `homes/${currentHomeCode}/tasks/${empId}`));
+      await set(taskRef, {
+        date,
+        title,
+        completed: false,
+        createdAt: Date.now()
+      });
+      document.getElementById("taskTitleInput").value = "";
+    };
+
+    window.toggleTaskCompleted = async function (empId, taskId, completed) {
+      await update(ref(db, `homes/${currentHomeCode}/tasks/${empId}/${taskId}`), {
+        completed: !completed,
+        updatedAt: Date.now()
+      });
+    };
+
+    window.deleteTask = async function (empId, taskId) {
+      await remove(ref(db, `homes/${currentHomeCode}/tasks/${empId}/${taskId}`));
+    };
+
+    // --- Chat y sonido ---
+    async function pushSystemChatMessage(empId, text) {
+      const msgRef = push(ref(db, `homes/${currentHomeCode}/chats/${empId}`));
+      await set(msgRef, {
+        senderRole: "system",
+        senderName: "Sistema",
+        text,
+        createdAt: Date.now()
+      });
+    }
+
+    window.sendChatMessage = async function (e, empId, senderRole) {
+      e.preventDefault();
+      if (!empId) return;
+      const inputId = senderRole === "employee" ? "empChatInput" : "ownChatInput";
+      const input = document.getElementById(inputId);
+      const text = input.value.trim();
+      if (!text) return;
+
+      const msgRef = push(ref(db, `homes/${currentHomeCode}/chats/${empId}`));
+      await set(msgRef, {
+        senderRole,
+        senderName: currentUser?.name || "Usuario",
+        text,
+        createdAt: Date.now()
+      });
+      input.value = "";
+    };
+
+    function handleIncomingChatNotifications(empId, messagesList, badgeId, tabId, isCurrentChatTab) {
+      const prevCount = lastSeenChatCountByEmp[empId];
+      const count = messagesList.length;
+
+      if (isFirstChatLoad) {
+        lastSeenChatCountByEmp[empId] = count;
+        return;
+      }
+
+      if (prevCount !== undefined && count > prevCount) {
+        const newMsgs = messagesList.slice(prevCount);
+        const hasExternalMsg = newMsgs.some(m => m.senderName !== currentUser?.name);
+        if (hasExternalMsg) {
+          playChatNotificationSound();
+          if (!isCurrentChatTab) {
+            const unread = count - prevCount;
+            const badge = document.getElementById(badgeId);
+            if (badge) {
+              badge.textContent = String(unread);
+              badge.classList.remove("hidden");
+            }
+            document.getElementById(tabId)?.classList.add("tab-alert");
+          } else {
+            lastSeenChatCountByEmp[empId] = count;
+          }
+        } else {
+          lastSeenChatCountByEmp[empId] = count;
         }
+      } else if (isCurrentChatTab) {
+        lastSeenChatCountByEmp[empId] = count;
+      }
+    }
+
+    // --- Empleadas: Alta, Edición, Tarifa con fecha de inicio y Eliminación ---
+    window.saveEmployeeForm = async function (e) {
+      e.preventDefault();
+      const idInput = document.getElementById("empFormId").value;
+      const name = document.getElementById("empFormName").value.trim();
+      const rawPass = document.getElementById("empFormPassword").value;
+      const rate = parseFloat(document.getElementById("empFormRate").value);
+      const dailyHours = parseFloat(document.getElementById("empFormDailyHours").value);
+      const effectiveDate = document.getElementById("empRateEffectiveDate").value || toDateStr(Date.now());
+
+      if (!name || isNaN(rate) || isNaN(dailyHours)) return;
+
+      if (!idInput) {
+        const finalPass = rawPass.trim() ? rawPass.trim() : name.toLowerCase();
+        const passwordHash = await hashString(finalPass);
+        const newRef = push(ref(db, `homes/${currentHomeCode}/employees`));
+        await set(newRef, {
+          name,
+          passwordHash,
+          hourlyRate: rate,
+          dailyHours,
+          rateHistory: [{ effectiveFrom: toDateStr(Date.now()), rate }],
+          createdAt: Date.now()
+        });
+        currentOwnerSelectedEmpId = newRef.key;
+      } else {
+        const existing = homeData.employees?.[idInput] || {};
+        const updates = {
+          name,
+          hourlyRate: rate,
+          dailyHours
+        };
+        if (rawPass.trim()) {
+          updates.passwordHash = await hashString(rawPass.trim());
+        }
+        const history = Array.isArray(existing.rateHistory)
+          ? [...existing.rateHistory]
+          : [{ effectiveFrom: toDateStr(existing.createdAt || Date.now()), rate: Number(existing.hourlyRate ?? 10) }];
+
+        if (Number(existing.hourlyRate ?? 10) !== rate) {
+          const idx = history.findIndex(h => h.effectiveFrom === effectiveDate);
+          if (idx >= 0) history[idx].rate = rate;
+          else history.push({ effectiveFrom: effectiveDate, rate });
+          updates.rateHistory = history;
+        }
+
+        await update(ref(db, `homes/${currentHomeCode}/employees/${idInput}`), updates);
+      }
+
+      resetEmployeeForm();
+    };
+
+    window.editEmployee = function (empId) {
+      const emp = homeData.employees?.[empId];
+      if (!emp) return;
+      document.getElementById("empFormTitle").textContent = `Editar empleada: ${emp.name}`;
+      document.getElementById("empFormId").value = empId;
+      document.getElementById("empFormName").value = emp.name;
+      document.getElementById("empFormPassword").value = "";
+      document.getElementById("empFormPassword").placeholder = "Dejar vacío para mantener contraseña actual";
+      document.getElementById("empFormRate").value = emp.hourlyRate ?? 10;
+      document.getElementById("empFormDailyHours").value = emp.dailyHours ?? 4;
+      document.getElementById("empRateEffectiveDateBox").classList.remove("hidden");
+      document.getElementById("empRateEffectiveDate").value = toDateStr(Date.now());
+      switchOwnerTab("ajustes");
+    };
+
+    window.deleteEmployee = async function (empId) {
+      const emp = homeData.employees?.[empId];
+      if (!emp) return;
+      if (!confirm(`¿Eliminar a ${emp.name}? Se borrarán sus datos asociados en este hogar.`)) return;
+      await remove(ref(db, `homes/${currentHomeCode}/employees/${empId}`));
+      await remove(ref(db, `homes/${currentHomeCode}/tasks/${empId}`));
+      await remove(ref(db, `homes/${currentHomeCode}/chats/${empId}`));
+      if (currentOwnerSelectedEmpId === empId) {
+        currentOwnerSelectedEmpId = Object.keys(homeData.employees || {}).filter(k => k !== empId)[0] || "";
+      }
+    };
+
+    window.resetEmployeeForm = function () {
+      document.getElementById("empFormTitle").textContent = "Dar de Alta Empleada";
+      document.getElementById("empFormId").value = "";
+      document.getElementById("empFormName").value = "";
+      document.getElementById("empFormPassword").value = "";
+      document.getElementById("empFormPassword").placeholder = "Por defecto el nombre en minúsculas";
+      document.getElementById("empFormRate").value = "10";
+      document.getElementById("empFormDailyHours").value = "4";
+      document.getElementById("empRateEffectiveDateBox").classList.add("hidden");
+    };
+
+    // --- Cierre de mes y pago abonado ---
+    window.saveMonthPayment = async function () {
+      const empId = currentOwnerSelectedEmpId;
+      const monthStr = document.getElementById("ownerMonthPicker").value;
+      const paidAmount = parseFloat(document.getElementById("paidAmountInput").value);
+      const paidDate = document.getElementById("paidDateInput").value;
+
+      if (!empId || !monthStr || isNaN(paidAmount)) return;
+
+      await set(ref(db, `homes/${currentHomeCode}/monthClosures/${empId}/${monthStr}`), {
+        closed: true,
+        paidAmount,
+        paidDate: paidDate || toDateStr(Date.now()),
+        updatedAt: Date.now()
+      });
+
+      const empName = homeData.employees?.[empId]?.name || "Empleada";
+      await pushSystemChatMessage(
+        empId,
+        `Mes ${monthStr} cerrado y marcado como ABONADO (${formatEuroExact(paidAmount)}) para ${empName}.`
+      );
+    };
+
+    // --- Enlace de invitación y contraseña máster ---
+    function updateInviteLink() {
+      const url = new URL(window.location.href);
+      url.searchParams.set("hogar", currentHomeCode);
+      document.getElementById("inviteLinkInput").value = url.toString();
+    }
+
+    window.copyInviteLink = function () {
+      const input = document.getElementById("inviteLinkInput");
+      navigator.clipboard?.writeText(input.value);
+      input.select();
+    };
+
+    window.updateMasterPassword = async function (e) {
+      e.preventDefault();
+      const newPass = document.getElementById("newMasterPasswordInput").value;
+      if (!newPass) return;
+      const hash = await hashString(newPass);
+      await set(ref(db, `homes/${currentHomeCode}/masterPasswordHash`), hash);
+      homeData.masterPasswordHash = hash;
+      document.getElementById("newMasterPasswordInput").value = "";
+      alert("Contraseña máster actualizada.");
+    };
+
+    // --- Comprobación de exceso de +1 hora sobre horas diarias (solo aviso) ---
+    function checkOvertimeWarnings() {
+      const alertsContainer = document.getElementById("globalAlerts");
+      if (!currentUser || !currentHomeCode) {
+        alertsContainer.innerHTML = "";
+        return;
+      }
+
+      const now = Date.now();
+      const warnings = [];
+
+      for (const [shiftId, shift] of Object.entries(homeData.shifts || {})) {
+        const emp = homeData.employees?.[shift.employeeId];
+        if (!emp) continue;
+        const dailyLimitMs = Number(emp.dailyHours || 4) * 3600000;
+        const thresholdMs = dailyLimitMs + 3600000; // +1 hora extra
+        const durMs = getShiftDurationMs(shift, now);
+
+        if (durMs > thresholdMs) {
+          warnings.push({
+            shiftId,
+            empName: emp.name,
+            date: shift.date || toDateStr(shift.startAt),
+            durStr: formatDurationHM(durMs),
+            limitStr: `${emp.dailyHours}h`
+          });
+
+          if (!shift.overtimeNotified) {
+            update(ref(db, `homes/${currentHomeCode}/shifts/${shiftId}`), {
+              overtimeNotified: true
+            });
+            pushSystemChatMessage(
+              shift.employeeId,
+              `AVISO: ${emp.name} ha superado en más de 1 hora su jornada diaria (${emp.dailyHours}h) el ${shift.date || toDateStr(shift.startAt)}. Revisar en calendario.`
+            );
+          }
+        }
+      }
+
+      if (warnings.length === 0) {
+        alertsContainer.innerHTML = "";
+        return;
+      }
+
+      alertsContainer.innerHTML = warnings.map(w => `
+        <div class="bg-amber-50 border border-amber-300 text-amber-900 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm shadow-xs">
+          <div>
+            <span class="font-extrabold">Aviso de exceso de horas:</span>
+            ${escapeHtml(w.empName)} acumula <span class="font-bold tabular-nums">${w.durStr}</span> el ${w.date} (ficha: ${w.limitStr} + 1h). Solo aviso para revisión.
+          </div>
+          ${currentUser.role === "owner" ? `
+            <button type="button" onclick="openEditShiftModal('${w.shiftId}')"
+              class="px-3 py-1 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold cursor-pointer">
+              Revisar / Ajustar
+            </button>
+          ` : ""}
+        </div>
+      `).join("");
+    }
+
+    // --- Renderizado general ---
+    function renderAllActiveViews() {
+      if (!currentUser) return;
+      checkOvertimeWarnings();
+
+      if (currentUser.role === "employee") {
+        renderEmployeeView();
+      } else if (currentUser.role === "owner") {
+        renderOwnerView();
+      }
+      isFirstChatLoad = false;
+    }
+
+    function renderEmployeeView() {
+      const empId = currentUser.employeeId;
+      const emp = homeData.employees?.[empId];
+      if (!emp) return;
+
+      const now = Date.now();
+      const todayStr = toDateStr(now);
+
+      const allEmpShifts = Object.entries(homeData.shifts || {})
+        .map(([id, s]) => ({ id, ...s }))
+        .filter(s => s.employeeId === empId);
+
+      const activeShift = allEmpShifts.find(s => !s.endAt);
+      const todayShifts = allEmpShifts.filter(s => (s.date || toDateStr(s.startAt)) === todayStr);
+
+      let todayTotalMs = 0;
+      for (const s of todayShifts) {
+        if (s.status === "confirmed" || !s.endAt) {
+          todayTotalMs += getShiftDurationMs(s, now);
+        }
+      }
+
+      document.getElementById("empTodayTotal").textContent = formatDurationHM(todayTotalMs);
+      document.getElementById("btnClockIn").disabled = Boolean(activeShift);
+      document.getElementById("btnClockOut").disabled = !activeShift;
+
+      const statusBadge = document.getElementById("empShiftStatusBadge");
+      if (activeShift) {
+        statusBadge.textContent = "Turno en curso";
+        statusBadge.className = "inline-block px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800";
+        document.getElementById("empActiveTimer").textContent = formatDurationHM(now - activeShift.startAt);
+        document.getElementById("empActiveSince").textContent = `Entrada: ${formatTimeHM(activeShift.startAt)}`;
+      } else {
+        statusBadge.textContent = "Sin turno activo";
+        statusBadge.className = "inline-block px-3 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600";
+        document.getElementById("empActiveTimer").textContent = "0h 00m";
+        document.getElementById("empActiveSince").textContent = "";
+      }
+
+      // Tareas del día
+      document.getElementById("empTasksDateLabel").textContent = todayStr;
+      const tasksObj = homeData.tasks?.[empId] || {};
+      const todayTasks = Object.entries(tasksObj).filter(([_, t]) => t.date === todayStr);
+      const tasksListEl = document.getElementById("empTasksList");
+
+      if (todayTasks.length === 0) {
+        tasksListEl.innerHTML = `<p class="text-xs text-slate-400 py-2">No hay tareas especiales asignadas para hoy.</p>`;
+      } else {
+        tasksListEl.innerHTML = todayTasks.map(([taskId, t]) => `
+          <label class="flex items-center gap-3 p-3 rounded-2xl border border-warm-200 bg-warm-50/70 cursor-pointer">
+            <input type="checkbox" ${t.completed ? "checked" : ""}
+              onchange="toggleTaskCompleted('${empId}', '${taskId}', ${Boolean(t.completed)})"
+              class="w-5 h-5 rounded text-brand-600 cursor-pointer" />
+            <span class="text-sm font-medium ${t.completed ? "line-through text-slate-400" : "text-slate-800"}">
+              ${escapeHtml(t.title)}
+            </span>
+          </label>
+        `).join("");
+      }
+
+      renderEmployeeCalendar();
+      renderChatBox(empId, "empChatMessages", currentEmpTab === "chat", "empChatBadge", "empTabChat");
+    }
+
+    function renderEmployeeCalendar() {
+      const empId = currentUser.employeeId;
+      const monthStr = document.getElementById("empMonthPicker").value || toMonthStr();
+      const stats = calculateMonthStats(empId, monthStr);
+
+      document.getElementById("empMonthDays").textContent = String(stats.daysCount);
+      document.getElementById("empMonthHours").textContent = formatDurationHM(stats.confirmedMs);
+      document.getElementById("empMonthAmount").textContent = formatEuroExact(stats.totalAmount);
+
+      const closure = homeData.monthClosures?.[empId]?.[monthStr];
+      const closedBanner = document.getElementById("empMonthClosedBanner");
+      if (closure?.closed) {
+        closedBanner.classList.remove("hidden");
+        closedBanner.textContent = `Mes cerrado · Abonado: ${formatEuroExact(closure.paidAmount)} (${closure.paidDate || ""})`;
+      } else {
+        closedBanner.classList.add("hidden");
+      }
+
+      const listEl = document.getElementById("empCalendarEntries");
+      if (stats.shiftsInMonth.length === 0) {
+        listEl.innerHTML = `<p class="text-xs text-slate-400 py-2">No hay fichajes en este mes.</p>`;
+        return;
+      }
+
+      listEl.innerHTML = stats.shiftsInMonth.map(s => {
+        const badge = getShiftStatusBadge(s.status);
+        return `
+          <div class="flex items-center justify-between gap-3 p-3 rounded-2xl border border-warm-200 bg-warm-50/60">
+            <div>
+              <div class="text-sm font-bold text-slate-800">${s.date}</div>
+              <div class="text-xs text-slate-500 tabular-nums">
+                ${formatTimeHM(s.startAt)} – ${s.endAt ? formatTimeHM(s.endAt) : "En curso"} · ${formatDurationHM(getShiftDurationMs(s))}
+              </div>
+            </div>
+            <span class="px-2.5 py-1 rounded-full text-xs font-bold ${badge.cls}">${badge.label}</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderOwnerView() {
+      const empEntries = Object.entries(homeData.employees || {});
+      const selectEl = document.getElementById("ownerSelectedEmployee");
+
+      if (empEntries.length === 0) {
+        selectEl.innerHTML = `<option value="">Sin empleadas registradas</option>`;
+        currentOwnerSelectedEmpId = "";
+        document.getElementById("ownerEmployeeRateInfo").textContent = "Añade una empleada en Ajustes";
+      } else {
+        if (!currentOwnerSelectedEmpId || !homeData.employees[currentOwnerSelectedEmpId]) {
+          currentOwnerSelectedEmpId = empEntries[0][0];
+        }
+        selectEl.innerHTML = empEntries
+          .map(([id, emp]) => `<option value="${id}">${escapeHtml(emp.name)}</option>`)
+          .join("");
+        selectEl.value = currentOwnerSelectedEmpId;
+
+        const activeEmp = homeData.employees[currentOwnerSelectedEmpId];
+        document.getElementById("ownerEmployeeRateInfo").textContent =
+          `Tarifa actual: ${formatEuroExact(Number(activeEmp.hourlyRate ?? 10))}/h · Jornada: ${activeEmp.dailyHours ?? 4}h/día`;
+      }
+
+      renderOwnerShiftsAndTasks();
+      renderOwnerCalendar();
+      renderOwnerSettings();
+      if (currentOwnerSelectedEmpId) {
+        document.getElementById("ownChatTitle").textContent =
+          `Chat con ${homeData.employees[currentOwnerSelectedEmpId]?.name || ""}`;
+        renderChatBox(currentOwnerSelectedEmpId, "ownChatMessages", currentOwnerTab === "chat", "ownChatBadge", "ownTabChat");
+      } else {
+        document.getElementById("ownChatMessages").innerHTML = `<p class="text-xs text-slate-400">Selecciona o crea una empleada.</p>`;
+      }
+    }
+
+    window.onOwnerEmployeeChange = function () {
+      currentOwnerSelectedEmpId = document.getElementById("ownerSelectedEmployee").value;
+      renderOwnerView();
+    };
+
+    function renderOwnerShiftsAndTasks() {
+      const shiftsContainer = document.getElementById("ownerShiftsList");
+      const tasksContainer = document.getElementById("ownerTasksList");
+
+      if (!currentOwnerSelectedEmpId) {
+        shiftsContainer.innerHTML = `<p class="text-xs text-slate-400">No hay empleadas registradas.</p>`;
+        tasksContainer.innerHTML = `<p class="text-xs text-slate-400">No hay empleadas registradas.</p>`;
+        return;
+      }
+
+      const shifts = Object.entries(homeData.shifts || {})
+        .map(([id, s]) => ({ id, ...s }))
+        .filter(s => s.employeeId === currentOwnerSelectedEmpId)
+        .sort((a, b) => (b.startAt || 0) - (a.startAt || 0));
+
+      if (shifts.length === 0) {
+        shiftsContainer.innerHTML = `<p class="text-xs text-slate-400">Sin fichajes registrados todavía.</p>`;
+      } else {
+        shiftsContainer.innerHTML = shifts.slice(0, 20).map(s => {
+          const badge = getShiftStatusBadge(s.status);
+          const canConfirm = s.status === "pending" && Boolean(s.endAt);
+          return `
+            <div class="p-3 rounded-2xl border border-warm-200 bg-warm-50/60 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-bold text-slate-900">${s.date}</span>
+                  <span class="px-2 py-0.5 rounded-full text-[11px] font-bold ${badge.cls}">${badge.label}</span>
+                </div>
+                <div class="text-xs text-slate-600 tabular-nums mt-0.5">
+                  ${formatTimeHM(s.startAt)} – ${s.endAt ? formatTimeHM(s.endAt) : "En curso"} · ${formatDurationHM(getShiftDurationMs(s))}
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5">
+                ${canConfirm ? `
+                  <button type="button" onclick="confirmShift('${s.id}')"
+                    class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer">
+                    Confirmar
+                  </button>
+                ` : ""}
+                <button type="button" onclick="openEditShiftModal('${s.id}')"
+                  class="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold cursor-pointer">
+                  Editar
+                </button>
+              </div>
+            </div>
+          `;
+        }).join("");
+      }
+
+      const tasks = Object.entries(homeData.tasks?.[currentOwnerSelectedEmpId] || {})
+        .sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+
+      if (tasks.length === 0) {
+        tasksContainer.innerHTML = `<p class="text-xs text-slate-400">No hay tareas asignadas.</p>`;
+      } else {
+        tasksContainer.innerHTML = tasks.map(([taskId, t]) => `
+          <div class="flex items-center justify-between gap-2 p-2.5 rounded-2xl border border-warm-200 bg-warm-50/60">
+            <div class="min-w-0">
+              <div class="text-xs font-bold text-slate-500">${t.date}</div>
+              <div class="text-sm font-medium truncate ${t.completed ? "line-through text-slate-400" : "text-slate-800"}">
+                ${escapeHtml(t.title)}
+              </div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <span class="text-xs font-bold ${t.completed ? "text-emerald-600" : "text-amber-600"}">
+                ${t.completed ? "Hecha" : "Pendiente"}
+              </span>
+              <button type="button" onclick="deleteTask('${currentOwnerSelectedEmpId}', '${taskId}')"
+                class="text-xs text-rose-600 hover:underline font-semibold cursor-pointer">
+                Quitar
+              </button>
+            </div>
+          </div>
+        `).join("");
+      }
+    }
+
+    function renderOwnerCalendar() {
+      if (!currentOwnerSelectedEmpId) return;
+      const monthStr = document.getElementById("ownerMonthPicker").value || toMonthStr();
+      const stats = calculateMonthStats(currentOwnerSelectedEmpId, monthStr);
+
+      document.getElementById("ownMonthDays").textContent = String(stats.daysCount);
+      document.getElementById("ownMonthHours").textContent = formatDurationHM(stats.confirmedMs);
+      document.getElementById("ownMonthAmount").textContent = formatEuroExact(stats.totalAmount);
+
+      const closure = homeData.monthClosures?.[currentOwnerSelectedEmpId]?.[monthStr];
+      const statusBadge = document.getElementById("ownMonthPaymentStatus");
+      if (closure?.closed) {
+        statusBadge.textContent = `Abonado: ${formatEuroExact(closure.paidAmount)}`;
+        statusBadge.className = "text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800";
+        document.getElementById("paidAmountInput").value = closure.paidAmount ?? "";
+        if (closure.paidDate) document.getElementById("paidDateInput").value = closure.paidDate;
+      } else {
+        statusBadge.textContent = "Abierto";
+        statusBadge.className = "text-xs font-bold px-2.5 py-1 rounded-full bg-slate-200 text-slate-700";
+      }
+
+      const listEl = document.getElementById("ownerCalendarEntries");
+      if (stats.shiftsInMonth.length === 0) {
+        listEl.innerHTML = `<p class="text-xs text-slate-400">Sin registros este mes.</p>`;
+        return;
+      }
+
+      const emp = homeData.employees[currentOwnerSelectedEmpId];
+      listEl.innerHTML = stats.shiftsInMonth.map(s => {
+        const badge = getShiftStatusBadge(s.status);
+        const dateKey = s.date || toDateStr(s.startAt);
+        const rate = getRateForDate(emp, dateKey);
+        const shiftAmount = (s.status === "confirmed" && s.endAt)
+          ? (getShiftDurationMs(s) / 3600000) * rate
+          : 0;
+
+        return `
+          <div class="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl border border-warm-200 bg-warm-50/60">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-bold text-slate-900">${dateKey}</span>
+                <span class="px-2 py-0.5 rounded-full text-[11px] font-bold ${badge.cls}">${badge.label}</span>
+              </div>
+              <div class="text-xs text-slate-500 tabular-nums">
+                ${formatTimeHM(s.startAt)} – ${s.endAt ? formatTimeHM(s.endAt) : "En curso"} · ${formatDurationHM(getShiftDurationMs(s))} · Tarifa: ${formatEuroExact(rate)}/h
+              </div>
+            </div>
+            <div class="text-right">
+              <div class="text-sm font-extrabold text-slate-800 tabular-nums">${formatEuroExact(shiftAmount)}</div>
+              <button type="button" onclick="openEditShiftModal('${s.id}')" class="text-xs text-brand-700 font-semibold hover:underline cursor-pointer">
+                Ajustar
+              </button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderOwnerSettings() {
+      updateInviteLink();
+      const listEl = document.getElementById("ownerEmployeesList");
+      const entries = Object.entries(homeData.employees || {});
+
+      if (entries.length === 0) {
+        listEl.innerHTML = `<p class="text-xs text-slate-400">Aún no has dado de alta a ninguna empleada.</p>`;
+        return;
+      }
+
+      listEl.innerHTML = entries.map(([id, emp]) => `
+        <div class="flex items-center justify-between gap-2 p-3 rounded-2xl border border-warm-200 bg-warm-50/60">
+          <div>
+            <div class="text-sm font-bold text-slate-900">${escapeHtml(emp.name)}</div>
+            <div class="text-xs text-slate-500">${formatEuroExact(Number(emp.hourlyRate ?? 10))}/h · ${emp.dailyHours ?? 4}h/día</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="editEmployee('${id}')"
+              class="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-100 cursor-pointer">
+              Modificar
+            </button>
+            <button type="button" onclick="deleteEmployee('${id}')"
+              class="px-3 py-1.5 rounded-xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-700 hover:bg-rose-100 cursor-pointer">
+              Eliminar
+            </button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderChatBox(empId, containerId, isCurrentTab, badgeId, tabId) {
+      const container = document.getElementById(containerId);
+      const msgs = Object.entries(homeData.chats?.[empId] || {})
+        .map(([id, m]) => ({ id, ...m }))
+        .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+
+      handleIncomingChatNotifications(empId, msgs, badgeId, tabId, isCurrentTab);
+
+      if (msgs.length === 0) {
+        container.innerHTML = `<p class="text-xs text-slate-400 text-center py-6">Sin mensajes todavía.</p>`;
+        return;
+      }
+
+      container.innerHTML = msgs.map(m => {
+        if (m.senderRole === "system") {
+          return `
+            <div class="text-center my-1">
+              <span class="inline-block px-3 py-1 rounded-full bg-amber-100/80 text-amber-900 text-[11px] font-semibold">
+                ${escapeHtml(m.text)} · ${formatTimeHM(m.createdAt)}
+              </span>
+            </div>
+          `;
+        }
+        const isMine = m.senderName === currentUser?.name;
+        return `
+          <div class="flex flex-col ${isMine ? "items-end" : "items-start"}">
+            <span class="text-[10px] font-bold text-slate-400 px-1 mb-0.5">${escapeHtml(m.senderName)} · ${formatTimeHM(m.createdAt)}</span>
+            <div class="max-w-[82%] px-3.5 py-2 rounded-2xl text-sm ${
+              isMine
+                ? "bg-brand-600 text-white rounded-br-xs"
+                : "bg-white border border-warm-200 text-slate-800 rounded-bl-xs"
+            }">
+              ${escapeHtml(m.text)}
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function getShiftStatusBadge(status) {
+      if (status === "confirmed") {
+        return { label: "Confirmado", cls: "bg-emerald-100 text-emerald-800" };
+      }
+      if (status === "pending") {
+        return { label: "Pendiente de confirmar", cls: "bg-amber-100 text-amber-800" };
+      }
+      return { label: "En curso", cls: "bg-sky-100 text-sky-800" };
+    }
+
+    function escapeHtml(str) {
+      return String(str || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    // Refresco de cronómetros y avisos cada segundo
+    setInterval(() => {
+      if (!currentUser) return;
+      checkOvertimeWarnings();
+      if (currentUser.role === "employee" && currentEmpTab === "fichaje") {
+        renderEmployeeView();
       }
     }, 1000);
 
-    setInterval(() => {
-      if (cloudConfig.enabled && cloudConfig.firebaseDbUrl) {
-        pullFromFirebase(true);
-      }
-    }, 1500);
-
-    render();
-    if (cloudConfig.enabled && cloudConfig.firebaseDbUrl) {
-      pullFromFirebase(true);
-    }
+    initFromUrl();
   </script>
 </body>
 </html>
