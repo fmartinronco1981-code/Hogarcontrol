@@ -70,10 +70,10 @@
       </div>
 
       <div id="headerActions" class="flex items-center gap-2 shrink-0 hidden">
-        <button id="editModeBtn" onclick="toggleEditMode()" class="hidden px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer">
+        <button id="editModeBtn" type="button" onclick="toggleEditMode()" class="hidden px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer">
           Modo Edición: OFF
         </button>
-        <button onclick="logoutSession()" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer">
+        <button type="button" onclick="logoutSession()" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer">
           Salir
         </button>
       </div>
@@ -94,7 +94,6 @@
           <p class="text-sm text-slate-500">Sincronización en tiempo real entre dispositivos</p>
         </div>
 
-        <!-- Código de hogar -->
         <div>
           <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
             Código de Hogar
@@ -112,7 +111,6 @@
           </p>
         </div>
 
-        <!-- Selector de Rol -->
         <div>
           <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
             Entrar como
@@ -129,7 +127,6 @@
           </div>
         </div>
 
-        <!-- Campos Propietario -->
         <div id="ownerLoginBox" class="space-y-3">
           <div>
             <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
@@ -143,7 +140,6 @@
           </p>
         </div>
 
-        <!-- Campos Empleado -->
         <div id="employeeLoginBox" class="space-y-3 hidden">
           <div>
             <label class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
@@ -174,25 +170,24 @@
 
     <!-- PANTALLA 2: ESPACIO DE EMPLEADA -->
     <section id="employeeView" class="hidden space-y-4">
-      <!-- Navegación pestañas empleada -->
       <div class="grid grid-cols-3 gap-2 bg-white p-1.5 rounded-2xl border border-warm-200 shadow-xs">
-        <button id="empTabFichaje" onclick="switchEmpTab('fichaje')"
+        <button id="empTabFichaje" type="button" onclick="switchEmpTab('fichaje')"
           class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold bg-brand-600 text-white transition cursor-pointer">
           Fichaje y Tareas
         </button>
-        <button id="empTabCalendario" onclick="switchEmpTab('calendario')"
+        <button id="empTabCalendario" type="button" onclick="switchEmpTab('calendario')"
           class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-warm-50 transition cursor-pointer">
           Calendario
         </button>
-        <button id="empTabChat" onclick="switchEmpTab('chat')"
+        <button id="empTabChat" type="button" onclick="switchEmpTab('chat')"
           class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-warm-50 transition cursor-pointer flex items-center justify-center gap-1.5">
           <span>Chat</span>
           <span id="empChatBadge" class="hidden px-1.5 py-0.5 text-[10px] rounded-full bg-red-600 text-white font-extrabold">0</span>
         </button>
       </div>
 
-      <!-- Pestaña 1: Fichaje y Tareas -->
-      <div id="empPanelFichaje" class="space-y-4">
+      <!-- Pestaña 1: Fichaje y Tareas (Izquierda Crono+Botones / Derecha Tareas en apaisado) -->
+      <div id="empPanelFichaje" class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
         <div class="bg-white rounded-3xl border border-warm-200 p-5 sm:p-6 shadow-xs space-y-5">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -207,7 +202,6 @@
             </div>
           </div>
 
-          <!-- Cronómetro turno actual -->
           <div class="bg-warm-50 border border-warm-200 rounded-2xl p-4 flex items-center justify-between">
             <div>
               <div class="text-xs font-semibold text-slate-500">Cronómetro del turno actual</div>
@@ -216,20 +210,18 @@
             <div id="empActiveSince" class="text-xs text-slate-500 text-right"></div>
           </div>
 
-          <!-- Botones Entrada / Salida -->
           <div class="grid grid-cols-2 gap-3">
-            <button id="btnClockIn" onclick="clockIn()"
+            <button id="btnClockIn" type="button" onclick="clockIn()"
               class="py-4 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold text-base shadow-xs transition cursor-pointer">
               Entrada
             </button>
-            <button id="btnClockOut" onclick="requestClockOut()" disabled
+            <button id="btnClockOut" type="button" onclick="requestClockOut()" disabled
               class="py-4 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold text-base shadow-xs transition cursor-pointer">
               Salida
             </button>
           </div>
         </div>
 
-        <!-- Tareas especiales del día -->
         <div class="bg-white rounded-3xl border border-warm-200 p-5 shadow-xs space-y-3">
           <div class="flex items-center justify-between">
             <h3 class="font-bold text-slate-900">Tareas especiales del día</h3>
@@ -239,13 +231,13 @@
         </div>
       </div>
 
-      <!-- Pestaña 2: Calendario Empleada -->
+      <!-- Pestaña 2: Calendario Mensual Completo Empleada -->
       <div id="empPanelCalendario" class="hidden space-y-4">
         <div class="bg-white rounded-3xl border border-warm-200 p-5 shadow-xs space-y-4">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 class="font-bold text-lg text-slate-900">Resumen Mensual</h3>
-              <p class="text-xs text-slate-500">Solo computan los turnos confirmados por el propietario (sin redondeo)</p>
+              <h3 class="font-bold text-lg text-slate-900">Calendario Mensual</h3>
+              <p class="text-xs text-slate-500">Amarillo: pendiente de confirmar · Verde: confirmado (sin redondeo)</p>
             </div>
             <input id="empMonthPicker" type="month" onchange="renderEmployeeCalendar()"
               class="px-3 py-2 rounded-xl border border-slate-200 bg-warm-50 text-sm font-semibold text-slate-800" />
@@ -253,7 +245,7 @@
 
           <div class="grid grid-cols-3 gap-3">
             <div class="bg-warm-50 rounded-2xl p-3.5 border border-warm-200">
-              <div class="text-xs text-slate-500">Días trabajados</div>
+              <div class="text-xs text-slate-500">Días confirmados</div>
               <div id="empMonthDays" class="text-xl font-extrabold text-slate-900 mt-0.5">0</div>
             </div>
             <div class="bg-warm-50 rounded-2xl p-3.5 border border-warm-200">
@@ -268,7 +260,10 @@
 
           <div id="empMonthClosedBanner" class="hidden p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold"></div>
 
-          <div id="empCalendarEntries" class="space-y-2.5"></div>
+          <div id="empCalendarGrid"></div>
+          <div id="empSelectedDayDetail" class="p-3.5 rounded-2xl bg-warm-50 border border-warm-200 text-xs text-slate-600">
+            Pulsa un día del calendario para ver su detalle.
+          </div>
         </div>
       </div>
 
@@ -280,41 +275,41 @@
             <span class="text-xs text-slate-500">Sincronizado en tiempo real</span>
           </div>
           <div id="empChatMessages" class="flex-1 overflow-y-auto p-4 space-y-2.5 bg-warm-50/40"></div>
-          <form onsubmit="sendChatMessage(event, currentUser.employeeId, 'employee')" class="p-3 bg-white border-t border-warm-200 flex gap-2">
+          <div class="p-3 bg-white border-t border-warm-200 flex gap-2">
             <input id="empChatInput" type="text" placeholder="Escribe un mensaje..."
+              onkeydown="if(event.key==='Enter'){event.preventDefault();sendChatMessage(currentUser.employeeId,'employee');}"
               class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-warm-50 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-            <button type="submit" class="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold cursor-pointer">
+            <button type="button" onclick="sendChatMessage(currentUser.employeeId, 'employee')"
+              class="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold cursor-pointer">
               Enviar
             </button>
-          </form>
+          </div>
         </div>
       </div>
     </section>
 
     <!-- PANTALLA 3: ESPACIO DE PROPIETARIO -->
     <section id="ownerView" class="hidden space-y-4">
-      <!-- Pestañas Propietario -->
       <div class="flex flex-wrap gap-2 bg-white p-1.5 rounded-2xl border border-warm-200 shadow-xs">
-        <button id="ownTabPanel" onclick="switchOwnerTab('panel')"
+        <button id="ownTabPanel" type="button" onclick="switchOwnerTab('panel')"
           class="flex-1 min-w-[110px] py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold bg-brand-600 text-white transition cursor-pointer">
           Fichajes y Tareas
         </button>
-        <button id="ownTabCalendario" onclick="switchOwnerTab('calendario')"
+        <button id="ownTabCalendario" type="button" onclick="switchOwnerTab('calendario')"
           class="flex-1 min-w-[110px] py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-warm-50 transition cursor-pointer">
           Calendario y Pagos
         </button>
-        <button id="ownTabChat" onclick="switchOwnerTab('chat')"
+        <button id="ownTabChat" type="button" onclick="switchOwnerTab('chat')"
           class="flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-warm-50 transition cursor-pointer flex items-center justify-center gap-1.5">
           <span>Chat</span>
           <span id="ownChatBadge" class="hidden px-1.5 py-0.5 text-[10px] rounded-full bg-red-600 text-white font-extrabold">0</span>
         </button>
-        <button id="ownTabAjustes" onclick="switchOwnerTab('ajustes')"
+        <button id="ownTabAjustes" type="button" onclick="switchOwnerTab('ajustes')"
           class="flex-1 min-w-[110px] py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold text-slate-600 hover:bg-warm-50 transition cursor-pointer">
           Empleadas y Hogar
         </button>
       </div>
 
-      <!-- Selector de empleada activa para el propietario -->
       <div class="bg-white rounded-2xl border border-warm-200 p-3.5 flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-2">
           <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Empleada:</span>
@@ -325,8 +320,8 @@
         <div id="ownerEmployeeRateInfo" class="text-xs font-semibold text-brand-700 bg-brand-50 px-3 py-1.5 rounded-xl"></div>
       </div>
 
-      <!-- Pestaña 1: Fichajes pendientes/recientes y Tareas -->
-      <div id="ownPanelFichajes" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <!-- Pestaña 1: Fichajes y Tareas -->
+      <div id="ownPanelFichajes" class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
         <div class="bg-white rounded-3xl border border-warm-200 p-5 shadow-xs space-y-3">
           <div class="flex items-center justify-between">
             <h3 class="font-bold text-slate-900">Control de Fichajes</h3>
@@ -353,13 +348,13 @@
         </div>
       </div>
 
-      <!-- Pestaña 2: Calendario y Cierre/Pago de Mes -->
+      <!-- Pestaña 2: Calendario Mensual Completo y Cierre/Pago de Mes -->
       <div id="ownPanelCalendario" class="hidden">
         <div class="bg-white rounded-3xl border border-warm-200 p-5 shadow-xs space-y-4">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 class="font-bold text-lg text-slate-900">Calendario y Liquidación Mensual</h3>
-              <p class="text-xs text-slate-500">Cálculo exacto sin redondeo según tarifa vigente de cada fecha</p>
+              <h3 class="font-bold text-lg text-slate-900">Calendario Mensual y Liquidación</h3>
+              <p class="text-xs text-slate-500">Amarillo: falta confirmar · Verde: confirmado · Cálculo sin redondeo</p>
             </div>
             <input id="ownerMonthPicker" type="month" onchange="renderOwnerCalendar()"
               class="px-3 py-2 rounded-xl border border-slate-200 bg-warm-50 text-sm font-semibold" />
@@ -367,7 +362,7 @@
 
           <div class="grid grid-cols-3 gap-3">
             <div class="bg-warm-50 rounded-2xl p-3.5 border border-warm-200">
-              <div class="text-xs text-slate-500">Días trabajados</div>
+              <div class="text-xs text-slate-500">Días confirmados</div>
               <div id="ownMonthDays" class="text-xl font-extrabold text-slate-900 mt-0.5">0</div>
             </div>
             <div class="bg-warm-50 rounded-2xl p-3.5 border border-warm-200">
@@ -380,7 +375,6 @@
             </div>
           </div>
 
-          <!-- Cierre y registro de pago abonado -->
           <div class="bg-warm-50 border border-warm-200 rounded-2xl p-4 space-y-3">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <span class="text-sm font-bold text-slate-900">Marcar / Cerrar Mes y Registrar Pago Abonado</span>
@@ -408,7 +402,10 @@
             </div>
           </div>
 
-          <div id="ownerCalendarEntries" class="space-y-2.5"></div>
+          <div id="ownerCalendarGrid"></div>
+          <div id="ownerSelectedDayDetail" class="p-3.5 rounded-2xl bg-warm-50 border border-warm-200 text-xs text-slate-700">
+            Pulsa un día del calendario para ver o confirmar sus turnos.
+          </div>
         </div>
       </div>
 
@@ -420,20 +417,21 @@
             <span class="text-xs text-slate-500">Avisos automáticos + mensajes</span>
           </div>
           <div id="ownChatMessages" class="flex-1 overflow-y-auto p-4 space-y-2.5 bg-warm-50/40"></div>
-          <form onsubmit="sendChatMessage(event, currentOwnerSelectedEmpId, 'owner')" class="p-3 bg-white border-t border-warm-200 flex gap-2">
+          <div class="p-3 bg-white border-t border-warm-200 flex gap-2">
             <input id="ownChatInput" type="text" placeholder="Escribe un mensaje..."
+              onkeydown="if(event.key==='Enter'){event.preventDefault();sendChatMessage(currentOwnerSelectedEmpId,'owner');}"
               class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-warm-50 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-            <button type="submit" class="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold cursor-pointer">
+            <button type="button" onclick="sendChatMessage(currentOwnerSelectedEmpId, 'owner')"
+              class="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-sm font-bold cursor-pointer">
               Enviar
             </button>
-          </form>
+          </div>
         </div>
       </div>
 
       <!-- Pestaña 4: Empleadas y Hogar -->
       <div id="ownPanelAjustes" class="hidden space-y-4">
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <!-- Alta / Edición de Empleada -->
           <div class="bg-white rounded-3xl border border-warm-200 p-5 shadow-xs space-y-3">
             <h3 id="empFormTitle" class="font-bold text-slate-900">Dar de Alta Empleada</h3>
             <form onsubmit="saveEmployeeForm(event)" class="space-y-3">
@@ -478,7 +476,6 @@
             </form>
           </div>
 
-          <!-- Lista de Empleadas + Enlace Hogar + Contraseña Máster -->
           <div class="space-y-4">
             <div class="bg-white rounded-3xl border border-warm-200 p-5 shadow-xs space-y-3">
               <h3 class="font-bold text-slate-900">Empleadas registradas</h3>
@@ -587,6 +584,8 @@
     let currentOwnerSelectedEmpId = "";
     let currentEmpTab = "fichaje";
     let currentOwnerTab = "panel";
+    let selectedEmpCalDay = "";
+    let selectedOwnerCalDay = "";
 
     let homeData = {
       masterPasswordHash: null,
@@ -732,6 +731,127 @@
       };
     }
 
+    // Construye calendario mensual completo (del día 1 al último día del mes)
+    function buildFullMonthCalendarHtml(empId, monthStr, selectedDay, onSelectFnName, isOwner) {
+      const [yearStr, monStr] = monthStr.split("-");
+      const year = Number(yearStr);
+      const monIndex = Number(monStr) - 1;
+      const daysInMonth = new Date(year, monIndex + 1, 0).getDate();
+      // Lunes = 0 ... Domingo = 6
+      const firstWeekday = (new Date(year, monIndex, 1).getDay() + 6) % 7;
+
+      const shiftsByDay = {};
+      for (const [id, s] of Object.entries(homeData.shifts || {})) {
+        if (s.employeeId !== empId) continue;
+        const dKey = s.date || toDateStr(s.startAt);
+        if (!dKey.startsWith(monthStr)) continue;
+        if (!shiftsByDay[dKey]) shiftsByDay[dKey] = [];
+        shiftsByDay[dKey].push({ id, ...s });
+      }
+
+      const dayHeaders = ["L", "M", "X", "J", "V", "S", "D"]
+        .map(h => `<div class="text-center text-[11px] font-bold text-slate-400 py-1">${h}</div>`)
+        .join("");
+
+      const blanks = Array.from({ length: firstWeekday })
+        .map(() => `<div class="h-14 rounded-xl bg-warm-50/40"></div>`)
+        .join("");
+
+      const cells = Array.from({ length: daysInMonth }, (_, idx) => {
+        const dayNum = idx + 1;
+        const dateKey = `${monthStr}-${String(dayNum).padStart(2, "0")}`;
+        const dayShifts = shiftsByDay[dateKey] || [];
+
+        const hasPending = dayShifts.some(s => s.status === "pending");
+        const hasConfirmed = dayShifts.some(s => s.status === "confirmed");
+        const hasActive = dayShifts.some(s => s.status === "in_progress" || !s.endAt);
+
+        let cellStyle = "bg-white border-warm-200 text-slate-700 hover:bg-warm-50";
+        let dotLabel = "";
+
+        if (hasPending) {
+          cellStyle = "bg-amber-100 border-amber-400 text-amber-950 font-bold";
+          dotLabel = `<span class="text-[9px] font-extrabold text-amber-800">Pendiente</span>`;
+        } else if (hasConfirmed) {
+          cellStyle = "bg-emerald-100 border-emerald-400 text-emerald-950 font-bold";
+          dotLabel = `<span class="text-[9px] font-extrabold text-emerald-800">Confirmado</span>`;
+        } else if (hasActive) {
+          cellStyle = "bg-sky-100 border-sky-300 text-sky-900 font-bold";
+          dotLabel = `<span class="text-[9px] font-extrabold text-sky-800">En curso</span>`;
+        }
+
+        const isSelected = selectedDay === dateKey ? "ring-2 ring-brand-600" : "";
+        const totalDayMs = dayShifts.reduce((acc, s) => acc + getShiftDurationMs(s), 0);
+
+        return `
+          <button type="button" onclick="${onSelectFnName}('${dateKey}')"
+            class="h-14 rounded-xl border ${cellStyle} ${isSelected} p-1 flex flex-col items-center justify-between transition cursor-pointer">
+            <span class="text-xs leading-none">${dayNum}</span>
+            ${dotLabel}
+            <span class="text-[9px] tabular-nums opacity-80 leading-none">${dayShifts.length ? formatDurationHM(totalDayMs) : ""}</span>
+          </button>
+        `;
+      }).join("");
+
+      return `
+        <div class="space-y-2">
+          <div class="grid grid-cols-7 gap-1.5">${dayHeaders}</div>
+          <div class="grid grid-cols-7 gap-1.5">${blanks}${cells}</div>
+        </div>
+      `;
+    }
+
+    function renderDayDetailHtml(empId, dateKey, isOwner) {
+      if (!dateKey) {
+        return `<p class="text-xs text-slate-500">Pulsa cualquier día del mes para ver sus fichajes.</p>`;
+      }
+      const emp = homeData.employees?.[empId];
+      const dayShifts = Object.entries(homeData.shifts || {})
+        .map(([id, s]) => ({ id, ...s }))
+        .filter(s => s.employeeId === empId && (s.date || toDateStr(s.startAt)) === dateKey)
+        .sort((a, b) => (a.startAt || 0) - (b.startAt || 0));
+
+      if (dayShifts.length === 0) {
+        return `<p class="text-xs text-slate-500"><span class="font-bold text-slate-800">${dateKey}:</span> Sin fichajes registrados.</p>`;
+      }
+
+      const rate = getRateForDate(emp, dateKey);
+      return `
+        <div class="space-y-2">
+          <div class="font-bold text-slate-900 text-xs">Detalle del ${dateKey} (Tarifa: ${formatEuroExact(rate)}/h)</div>
+          ${dayShifts.map(s => {
+            const badge = getShiftStatusBadge(s.status);
+            const canConfirm = isOwner && s.status === "pending" && Boolean(s.endAt);
+            return `
+              <div class="flex flex-wrap items-center justify-between gap-2 bg-white p-2.5 rounded-xl border border-warm-200">
+                <div class="text-xs">
+                  <span class="font-bold tabular-nums">${formatTimeHM(s.startAt)} – ${s.endAt ? formatTimeHM(s.endAt) : "En curso"}</span>
+                  <span class="text-slate-500 tabular-nums">(${formatDurationHM(getShiftDurationMs(s))})</span>
+                  <span class="ml-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${badge.cls}">${badge.label}</span>
+                </div>
+                ${isOwner ? `
+                  <div class="flex gap-1.5">
+                    ${canConfirm ? `<button type="button" onclick="confirmShift('${s.id}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-bold cursor-pointer">Confirmar</button>` : ""}
+                    <button type="button" onclick="openEditShiftModal('${s.id}')" class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold cursor-pointer">Editar</button>
+                  </div>
+                ` : ""}
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+
+    window.selectEmpCalendarDay = function (dateKey) {
+      selectedEmpCalDay = dateKey;
+      renderEmployeeCalendar();
+    };
+
+    window.selectOwnerCalendarDay = function (dateKey) {
+      selectedOwnerCalDay = dateKey;
+      renderOwnerCalendar();
+    };
+
     function initFromUrl() {
       const params = new URLSearchParams(window.location.search);
       const codeParam = params.get("hogar");
@@ -754,6 +874,8 @@
       document.getElementById("ownerMonthPicker").value = curMonth;
       document.getElementById("paidDateInput").value = todayStr;
       document.getElementById("ownerPasswordInput").value = DEFAULT_MASTER_PASS;
+      selectedEmpCalDay = todayStr;
+      selectedOwnerCalDay = todayStr;
     }
 
     window.generateNewHomeCode = function () {
@@ -864,7 +986,6 @@
       currentHomeCode = code;
       attachHomeListener(code);
 
-      // Lectura directa actual de Firebase para evitar condiciones de carrera
       try {
         const snap = await get(ref(db, `homes/${code}`));
         if (snap.exists()) {
@@ -1217,6 +1338,7 @@
     };
 
     async function pushSystemChatMessage(empId, text) {
+      if (!currentHomeCode || !empId) return;
       const msgRef = push(ref(db, `homes/${currentHomeCode}/chats/${empId}`));
       await set(msgRef, {
         senderRole: "system",
@@ -1226,22 +1348,22 @@
       });
     }
 
-    window.sendChatMessage = async function (e, empId, senderRole) {
-      e.preventDefault();
-      if (!empId) return;
+    window.sendChatMessage = async function (empId, senderRole) {
+      if (!currentHomeCode || !empId || !currentUser) return;
       const inputId = senderRole === "employee" ? "empChatInput" : "ownChatInput";
       const input = document.getElementById(inputId);
+      if (!input) return;
       const text = input.value.trim();
       if (!text) return;
 
+      input.value = "";
       const msgRef = push(ref(db, `homes/${currentHomeCode}/chats/${empId}`));
       await set(msgRef, {
         senderRole,
-        senderName: currentUser?.name || "Usuario",
+        senderName: currentUser.name,
         text,
         createdAt: Date.now()
       });
-      input.value = "";
     };
 
     function handleIncomingChatNotifications(empId, messagesList, badgeId, tabId, isCurrentChatTab) {
@@ -1563,26 +1685,10 @@
         closedBanner.classList.add("hidden");
       }
 
-      const listEl = document.getElementById("empCalendarEntries");
-      if (stats.shiftsInMonth.length === 0) {
-        listEl.innerHTML = `<p class="text-xs text-slate-400 py-2">No hay fichajes en este mes.</p>`;
-        return;
-      }
-
-      listEl.innerHTML = stats.shiftsInMonth.map(s => {
-        const badge = getShiftStatusBadge(s.status);
-        return `
-          <div class="flex items-center justify-between gap-3 p-3 rounded-2xl border border-warm-200 bg-warm-50/60">
-            <div>
-              <div class="text-sm font-bold text-slate-800">${s.date}</div>
-              <div class="text-xs text-slate-500 tabular-nums">
-                ${formatTimeHM(s.startAt)} – ${s.endAt ? formatTimeHM(s.endAt) : "En curso"} · ${formatDurationHM(getShiftDurationMs(s))}
-              </div>
-            </div>
-            <span class="px-2.5 py-1 rounded-full text-xs font-bold ${badge.cls}">${badge.label}</span>
-          </div>
-        `;
-      }).join("");
+      document.getElementById("empCalendarGrid").innerHTML =
+        buildFullMonthCalendarHtml(empId, monthStr, selectedEmpCalDay, "selectEmpCalendarDay", false);
+      document.getElementById("empSelectedDayDetail").innerHTML =
+        renderDayDetailHtml(empId, selectedEmpCalDay, false);
     }
 
     function renderOwnerView() {
@@ -1722,41 +1828,10 @@
         statusBadge.className = "text-xs font-bold px-2.5 py-1 rounded-full bg-slate-200 text-slate-700";
       }
 
-      const listEl = document.getElementById("ownerCalendarEntries");
-      if (stats.shiftsInMonth.length === 0) {
-        listEl.innerHTML = `<p class="text-xs text-slate-400">Sin registros este mes.</p>`;
-        return;
-      }
-
-      const emp = homeData.employees[currentOwnerSelectedEmpId];
-      listEl.innerHTML = stats.shiftsInMonth.map(s => {
-        const badge = getShiftStatusBadge(s.status);
-        const dateKey = s.date || toDateStr(s.startAt);
-        const rate = getRateForDate(emp, dateKey);
-        const shiftAmount = (s.status === "confirmed" && s.endAt)
-          ? (getShiftDurationMs(s) / 3600000) * rate
-          : 0;
-
-        return `
-          <div class="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl border border-warm-200 bg-warm-50/60">
-            <div>
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-bold text-slate-900">${dateKey}</span>
-                <span class="px-2 py-0.5 rounded-full text-[11px] font-bold ${badge.cls}">${badge.label}</span>
-              </div>
-              <div class="text-xs text-slate-500 tabular-nums">
-                ${formatTimeHM(s.startAt)} – ${s.endAt ? formatTimeHM(s.endAt) : "En curso"} · ${formatDurationHM(getShiftDurationMs(s))} · Tarifa: ${formatEuroExact(rate)}/h
-              </div>
-            </div>
-            <div class="text-right">
-              <div class="text-sm font-extrabold text-slate-800 tabular-nums">${formatEuroExact(shiftAmount)}</div>
-              <button type="button" onclick="openEditShiftModal('${s.id}')" class="text-xs text-brand-700 font-semibold hover:underline cursor-pointer">
-                Ajustar
-              </button>
-            </div>
-          </div>
-        `;
-      }).join("");
+      document.getElementById("ownerCalendarGrid").innerHTML =
+        buildFullMonthCalendarHtml(currentOwnerSelectedEmpId, monthStr, selectedOwnerCalDay, "selectOwnerCalendarDay", true);
+      document.getElementById("ownerSelectedDayDetail").innerHTML =
+        renderDayDetailHtml(currentOwnerSelectedEmpId, selectedOwnerCalDay, true);
     }
 
     function renderOwnerSettings() {
