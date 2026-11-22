@@ -1021,7 +1021,7 @@
         <div id="ownerAlertsContainer"></div>
 
         <nav class="tabs cols-4" aria-label="Secciones propietario">
-          <button type="button" class="tab-btn active" data-own-tab="control">⏱ Control y Tareas</button>
+          <button type="button" class="tab-btn active" data-own-tab="control">⏱ Turnos y Tareas</button>
           <button type="button" class="tab-btn" data-own-tab="calendario">📅 Calendario y Pagos</button>
           <button type="button" class="tab-btn" id="ownChatTabBtn" data-own-tab="chat">💬 Chat</button>
           <button type="button" class="tab-btn" data-own-tab="ajustes">⚙ Empleadas y Hogar</button>
@@ -1038,24 +1038,14 @@
           </div>
         </div>
 
-        <!-- Tab 1: Control y Tareas (2 columnas en modo tablet) -->
+        <!-- Tab 1: Turnos y Tareas (2 columnas en modo tablet) -->
         <div id="ownTabControl" class="two-col-zone">
           <div class="card">
-            <div class="chrono-box">
-              <div class="chrono-label" id="ownChronoLabel">Sin empleada seleccionada</div>
-              <div class="chrono-time" id="ownChronoDisplay">0h 00m</div>
-              <div class="chrono-sub" id="ownChronoSub">Hoy confirmado: 0h 00m · Pendiente: 0h 00m</div>
+            <div class="card-title">
+              <span>Turnos de hoy (confirmación y ajuste)</span>
             </div>
-
-            <div class="fichaje-actions">
-              <button type="button" class="btn-success" id="ownBtnClockIn">▶ Fichar Entrada</button>
-              <button type="button" class="btn-danger" id="ownBtnClockOut" disabled>⏹ Fichar Salida</button>
-            </div>
-
-            <div class="stack" style="margin-top: 12px;">
-              <strong style="font-size:14px;">Turnos de hoy (confirmación y ajuste)</strong>
-              <div id="ownTodayShiftsList" class="stack"></div>
-            </div>
+            <div class="muted" id="ownChronoSub" style="margin-bottom: 10px;">Hoy confirmado: 0h 00m · Pendiente: 0h 00m</div>
+            <div id="ownTodayShiftsList" class="stack"></div>
           </div>
 
           <div class="card">
@@ -1626,7 +1616,7 @@
         stopChatSound();
       }
 
-      // Fichar entrada
+      // Fichar entrada (empleada)
       async function performClockIn(empId, actorLabel, byRole) {
         const emp = homeData.employees[empId];
         if (!emp) return;
@@ -1923,8 +1913,7 @@
           }
         });
 
-        // Determinar estado visual por día:
-        // Verde si tiene confirmados y no pendientes/activos; Amarillo si tiene pendientes; Azul si activo
+        // Determinar estado visual por día
         Object.values(dayMap).forEach((d) => {
           if (d.hasActive) {
             d.visualStatus = "active";
@@ -2067,7 +2056,7 @@
           document.getElementById("chronoDisplay").textContent = "0h 00m";
         }
 
-        // Total acumulado hoy (todos los turnos del día)
+        // Total acumulado hoy
         const shiftsToday = getEmployeeShifts(emp.id).filter((s) => s.dateKey === todayKey);
         const todayTotalMin = shiftsToday.reduce((acc, s) => acc + getShiftMinutes(s), 0);
         document.getElementById("chronoTodayTotal").textContent = `Total hoy: ${formatHM(todayTotalMin)}`;
@@ -2101,7 +2090,7 @@
           }).join("");
         }
 
-        // Tareas del día (solo marcar/desmarcar)
+        // Tareas del día
         document.getElementById("empTasksDateLabel").textContent = todayKey;
         const tasksToday = Object.values(homeData.tasks || {}).filter(
           (t) => t.employeeId === emp.id && t.dateKey === todayKey
@@ -2130,10 +2119,7 @@
           });
         }
 
-        // Calendario empleada
         renderEmployeeCalendar(emp.id);
-
-        // Chat empleada
         renderChatBox("empChatMessages", emp.id, "employee");
 
         const chatTabBtn = document.getElementById("empChatTabBtn");
@@ -2234,29 +2220,11 @@
         const emp = empId ? homeData.employees[empId] : null;
         const todayKey = toDateKey(Date.now());
 
-        // Cronómetro & fichajes desde Propietario
-        const ownBtnIn = document.getElementById("ownBtnClockIn");
-        const ownBtnOut = document.getElementById("ownBtnClockOut");
+        // Resumen de turnos de hoy para revisión del propietario (sin botones de fichaje propios)
         if (!emp) {
-          ownBtnIn.disabled = true;
-          ownBtnOut.disabled = true;
-          document.getElementById("ownChronoLabel").textContent = "Sin empleada seleccionada";
-          document.getElementById("ownChronoDisplay").textContent = "0h 00m";
-          document.getElementById("ownChronoSub").textContent = "";
-          document.getElementById("ownTodayShiftsList").innerHTML = `<div class="muted">Crea una empleada para fichar o ver turnos.</div>`;
+          document.getElementById("ownChronoSub").textContent = "Selecciona una empleada.";
+          document.getElementById("ownTodayShiftsList").innerHTML = `<div class="muted">Crea una empleada para revisar o gestionar turnos.</div>`;
         } else {
-          const activeShift = getActiveShift(emp.id);
-          ownBtnIn.disabled = Boolean(activeShift);
-          ownBtnOut.disabled = !activeShift;
-
-          if (activeShift) {
-            document.getElementById("ownChronoLabel").textContent = `${emp.name} · En curso desde ${formatTimeHHMM(activeShift.startTs)}`;
-            document.getElementById("ownChronoDisplay").textContent = formatHM(getShiftMinutes(activeShift));
-          } else {
-            document.getElementById("ownChronoLabel").textContent = `${emp.name} · Sin turno activo`;
-            document.getElementById("ownChronoDisplay").textContent = "0h 00m";
-          }
-
           const shiftsToday = getEmployeeShifts(emp.id).filter((s) => s.dateKey === todayKey);
           const confMin = shiftsToday.filter((s) => s.status === "confirmed").reduce((a, s) => a + getShiftMinutes(s), 0);
           const pendMin = shiftsToday.filter((s) => s.status === "pending").reduce((a, s) => a + getShiftMinutes(s), 0);
@@ -2457,7 +2425,6 @@
       function buildCalendarGrid(containerId, year, monthIndex, dayMap) {
         const grid = document.getElementById(containerId);
         const firstDay = new Date(year, monthIndex, 1);
-        // Lunes = 0 ... Domingo = 6
         const startOffset = (firstDay.getDay() + 6) % 7;
         const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
         const todayKey = toDateKey(Date.now());
@@ -2858,16 +2825,6 @@
           renderOwnerView();
         };
 
-        document.getElementById("ownBtnClockIn").onclick = () => {
-          if (!session.selectedEmpId) return;
-          performClockIn(session.selectedEmpId, "Propietario", "owner");
-        };
-
-        document.getElementById("ownBtnClockOut").onclick = () => {
-          if (!session.selectedEmpId) return;
-          promptClockOut(session.selectedEmpId, "Propietario", "owner");
-        };
-
         document.getElementById("ownTaskDateInput").onchange = () => renderOwnerView();
 
         document.getElementById("ownAddTaskForm").onsubmit = async (e) => {
@@ -2998,7 +2955,7 @@
           document.getElementById("modalCloseBtn").onclick = closeModal;
         };
 
-        // Refresco en vivo del cronómetro cada 15s
+        // Refresco en vivo cada 15s
         setInterval(() => {
           if (session.role && homeData) {
             renderAllActiveViews();
