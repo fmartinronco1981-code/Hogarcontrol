@@ -15,15 +15,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configurar Java 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Configurar Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
 
       - name: Preparar Capacitor y Android
         run: |
@@ -37,7 +37,7 @@ jobs:
             npx cap add android
           fi
           mkdir -p android/app
-          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" > android/app/google-services.json
+          cp "google-services (2).json" android/app/google-services.json
           npx cap sync android
 
       - name: Compilar APK debug
