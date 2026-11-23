@@ -37,7 +37,7 @@ jobs:
             npx cap add android
           fi
           mkdir -p android/app
-          cp "google-services (2).json" android/app/google-services.json
+          cp "google-services.json" android/app/google-services.json
           npx cap sync android
 
       - name: Compilar APK debug
