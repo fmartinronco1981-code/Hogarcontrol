@@ -1,0 +1,9 @@
+{
+  "appId": "com.hogarcontrol.app",
+  "appName": "homecontrol",
+  "webDir": "www",
+  "server": {
+    "url": "https://hogarcontrol.vercel.app",
+    "cleartext": false
+  }
+}
