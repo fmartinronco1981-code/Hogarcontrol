@@ -1245,6 +1245,7 @@
       // Polling en tiempo real sobre Firebase RTDB
       let pollTimerId = null;
       let isSyncing = false;
+      let pendingSaveMutators = [];
 
       // ---------- Utilidades de fecha y formato ----------
       function pad2(n) {
@@ -1443,12 +1444,18 @@
         if (tokenEl) tokenEl.textContent = token;
 
         if (!homeData || !session.homeCode) return;
+        const existing = homeData.fcmTokens && homeData.fcmTokens[uid];
+        const nextRole = session.role || "unknown";
+        const nextEmpId = session.role === "employee" ? session.employeeId : null;
+        if (existing && existing.token === token && existing.role === nextRole && existing.employeeId === nextEmpId) {
+          return;
+        }
         await saveHomeChanges((d) => {
           if (!d.fcmTokens) d.fcmTokens = {};
           d.fcmTokens[uid] = {
             token,
-            role: session.role || "unknown",
-            employeeId: session.role === "employee" ? session.employeeId : null,
+            role: nextRole,
+            employeeId: nextEmpId,
             updatedAt: Date.now()
           };
         });
@@ -1640,16 +1647,21 @@
 
       async function saveHomeChanges(mutatorFn) {
         if (!homeData) return;
-        const base = homeData;
-        mutatorFn(base);
-        saveLocalHome(base);
-        renderAllActiveViews();
-
-        if (isSyncing) return;
+        if (isSyncing) {
+          pendingSaveMutators.push(mutatorFn);
+          return;
+        }
         isSyncing = true;
-        setSyncIndicator("sync", "Guardando...");
         try {
-          await pushRemoteHome(base);
+          mutatorFn(homeData);
+          while (pendingSaveMutators.length > 0) {
+            const nextFn = pendingSaveMutators.shift();
+            nextFn(homeData);
+          }
+          saveLocalHome(homeData);
+          renderAllActiveViews();
+          setSyncIndicator("sync", "Guardando...");
+          await pushRemoteHome(homeData);
           setSyncIndicator("ok", "Firebase en línea");
         } catch (_) {
           setSyncIndicator("err", "Guardado local");
@@ -2470,7 +2482,6 @@
 
         renderEmployeesManageList();
         document.getElementById("inviteUrlDisplay").textContent = getInviteUrl(homeData.code);
-        initCapacitorPushBridge();
       }
 
       function renderOwnerShiftItem(s, emp) {
