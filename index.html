@@ -1163,16 +1163,16 @@
           </div>
 
           <div class="card">
-            <div class="card-title">Notificaciones Push (FCM / Capacitor)</div>
+            <div class="card-title">Alertas y dispositivo</div>
             <div class="stack">
               <div class="muted">
-                Entorno: <strong id="pushEnvLabel">Navegador web</strong> · Auth UID: <code id="firebaseUidLabel">pendiente</code>
+                Entorno: <strong id="pushEnvLabel">Navegador web</strong> · ID dispositivo: <code id="firebaseUidLabel">pendiente</code>
               </div>
               <div class="muted" style="word-break:break-all;">
-                Token FCM: <code id="pushTokenLabel">Disponible al ejecutar el APK con Capacitor</code>
+                Token dispositivo: <code id="pushTokenLabel">Sin push externa activa</code>
               </div>
               <div class="row-wrap">
-                <button type="button" class="btn-primary btn-sm" id="btnRefreshPushToken">Registrar / Actualizar FCM</button>
+                <button type="button" class="btn-primary btn-sm" id="btnRefreshPushToken">Comprobar dispositivo</button>
                 <button type="button" class="btn-ghost btn-sm" id="btnTestPushSound">Probar alerta sonora</button>
               </div>
             </div>
@@ -1216,11 +1216,10 @@
       const LAST_HOME_KEY = STORAGE_PREFIX + "last_home";
       const AUTH_UID_KEY = STORAGE_PREFIX + "anon_uid";
 
-      // Estado de sesión local
       let session = {
-        role: null,          // "owner" | "employee"
-        employeeId: null,    // ID empleada si role === "employee"
-        selectedEmpId: null, // ID empleada seleccionada en modo propietario
+        role: null,
+        employeeId: null,
+        selectedEmpId: null,
         homeCode: "",
         authUid: null
       };
@@ -1235,19 +1234,16 @@
       let activeEmpTab = "fichaje";
       let activeOwnTab = "control";
 
-      // Seguimiento de chat y alertas de sonido
       let lastSeenChatCount = { emp: 0, own: {} };
       let chatBlinkActive = { emp: false, own: {} };
       let soundIntervalId = null;
       let soundBurstTimeoutId = null;
       let audioCtx = null;
 
-      // Polling en tiempo real sobre Firebase RTDB
       let pollTimerId = null;
       let isSyncing = false;
       let pendingSaveMutators = [];
 
-      // ---------- Utilidades de fecha y formato ----------
       function pad2(n) {
         return String(Math.floor(Math.abs(n))).padStart(2, "0");
       }
@@ -1266,7 +1262,6 @@
 
       function formatEuroExact(amount) {
         const num = Number(amount) || 0;
-        // Sin redondeo artificial al alza: truncamos a 2 decimales exactos
         const truncated = Math.trunc(num * 100) / 100;
         return truncated.toLocaleString("es-ES", {
           minimumFractionDigits: 2,
@@ -1305,7 +1300,6 @@
         showToast._t = setTimeout(() => el.classList.add("hidden"), 2800);
       }
 
-      // ---------- Web Audio API: "pipip" un ratito (unos segundos) ----------
       function playPipipPair() {
         try {
           const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -1328,9 +1322,7 @@
             osc.start(now + offset);
             osc.stop(now + offset + 0.095);
           });
-        } catch (_) {
-          // Ignorar si el navegador bloquea audio sin gesto previo
-        }
+        } catch (_) {}
       }
 
       function triggerChatAlertBurst() {
@@ -1355,18 +1347,17 @@
         soundBurstTimeoutId = null;
       }
 
-      // ---------- Estructura vacía sin datos de ejemplo ----------
       function createEmptyHome(code, masterPassword = "1234") {
         return {
           code,
           createdAt: Date.now(),
           masterPassword: String(masterPassword || "1234"),
-          employees: {},      // id -> { id, name, password, dailyHours, rateHistory: [{ rate, startDate }] }
-          shifts: {},         // id -> { id, employeeId, dateKey, startTs, endTs, status: 'active'|'pending'|'confirmed', confirmedAt, overOneHourNotified }
-          tasks: {},          // id -> { id, employeeId, dateKey, title, done }
-          chats: {},          // employeeId -> { msgId: { id, senderRole, senderName, text, createdAt, isSystem } }
-          monthClosures: {},  // `${employeeId}_${YYYY-MM}` -> { closed, amount, paidDate, closedAt }
-          fcmTokens: {}       // uidOrKey -> { token, role, employeeId, updatedAt }
+          employees: {},
+          shifts: {},
+          tasks: {},
+          chats: {},
+          monthClosures: {},
+          fcmTokens: {}
         };
       }
 
@@ -1386,7 +1377,6 @@
         };
       }
 
-      // ---------- Firebase Auth (Anónimo) + Capacitor Push Bridge ----------
       function getOrCreateAnonUid() {
         let uid = localStorage.getItem(AUTH_UID_KEY);
         if (!uid) {
@@ -1405,148 +1395,16 @@
         );
       }
 
-      function openChatFromPushNotification(empIdFromPayload) {
-        if (!homeData || !session.role) return;
-        if (session.role === "employee" && session.employeeId) {
-          activeEmpTab = "chat";
-          document.querySelectorAll("[data-emp-tab]").forEach((b) => {
-            b.classList.toggle("active", b.getAttribute("data-emp-tab") === "chat");
-          });
-          document.getElementById("empTabFichaje").classList.add("hidden");
-          document.getElementById("empTabCalendario").classList.add("hidden");
-          document.getElementById("empTabChat").classList.remove("hidden");
-          markChatSeen("employee", session.employeeId);
-          renderChatBox("empChatMessages", session.employeeId, "employee");
-        } else if (session.role === "owner") {
-          if (empIdFromPayload && homeData.employees[empIdFromPayload]) {
-            session.selectedEmpId = empIdFromPayload;
-          }
-          activeOwnTab = "chat";
-          document.querySelectorAll("[data-own-tab]").forEach((b) => {
-            b.classList.toggle("active", b.getAttribute("data-own-tab") === "chat");
-          });
-          document.getElementById("ownTabControl").classList.add("hidden");
-          document.getElementById("ownTabCalendario").classList.add("hidden");
-          document.getElementById("ownTabChat").classList.remove("hidden");
-          document.getElementById("ownTabAjustes").classList.add("hidden");
-          if (session.selectedEmpId) {
-            markChatSeen("owner", session.selectedEmpId);
-            renderOwnerView();
-          }
-        }
-      }
-
-      async function registerFcmTokenInHome(token) {
-        if (!token) return;
-        fcmTokenValue = token;
-        const uid = getOrCreateAnonUid();
-        const tokenEl = document.getElementById("pushTokenLabel");
-        if (tokenEl) tokenEl.textContent = token;
-
-        if (!homeData || !session.homeCode) return;
-        const existing = homeData.fcmTokens && homeData.fcmTokens[uid];
-        const nextRole = session.role || "unknown";
-        const nextEmpId = session.role === "employee" ? session.employeeId : null;
-        if (existing && existing.token === token && existing.role === nextRole && existing.employeeId === nextEmpId) {
-          return;
-        }
-        await saveHomeChanges((d) => {
-          if (!d.fcmTokens) d.fcmTokens = {};
-          d.fcmTokens[uid] = {
-            token,
-            role: nextRole,
-            employeeId: nextEmpId,
-            updatedAt: Date.now()
-          };
-        });
-      }
-
-      async function syncCurrentSessionToken() {
-        if (!fcmTokenValue || !homeData || !session.homeCode) return;
-        await registerFcmTokenInHome(fcmTokenValue);
-      }
-
-      async function initCapacitorPushBridge() {
+      function updateDeviceInfoLabels() {
         const uid = getOrCreateAnonUid();
         const envEl = document.getElementById("pushEnvLabel");
         const uidEl = document.getElementById("firebaseUidLabel");
         const tokEl = document.getElementById("pushTokenLabel");
         if (uidEl) uidEl.textContent = uid;
-
-        if (!isCapacitorNative()) {
-          if (envEl) envEl.textContent = "Navegador web";
-          if (tokEl) tokEl.textContent = fcmTokenValue || "Disponible al ejecutar el APK con Capacitor";
-          return;
-        }
-
-        if (envEl) envEl.textContent = "Android nativo (Capacitor)";
-        const Push = window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
-        if (!Push) {
-          if (tokEl) tokEl.textContent = "Plugin @capacitor/push-notifications no disponible";
-          return;
-        }
-
-        try {
-          if (!initCapacitorPushBridge._bound) {
-            initCapacitorPushBridge._bound = true;
-
-            if (typeof Push.createChannel === "function") {
-              await Push.createChannel({
-                id: "chat_messages",
-                name: "Mensajes de chat",
-                description: "Alertas de mensajes nuevos en homecontrol",
-                importance: 5,
-                visibility: 1,
-                sound: "default",
-                vibration: true
-              }).catch(() => {});
-            }
-
-            Push.addListener("registration", (tokenObj) => {
-              if (tokenObj && tokenObj.value) {
-                registerFcmTokenInHome(tokenObj.value);
-              }
-            });
-
-            Push.addListener("registrationError", (err) => {
-              if (tokEl) tokEl.textContent = "Error registro FCM: " + JSON.stringify(err);
-            });
-
-            Push.addListener("pushNotificationReceived", (notif) => {
-              triggerChatAlertBurst();
-              const payloadEmpId = notif && notif.data && notif.data.employeeId;
-              if (session.role === "employee" && session.employeeId) {
-                if (activeEmpTab !== "chat") chatBlinkActive.emp = true;
-              } else if (session.role === "owner") {
-                const targetEmp = payloadEmpId || session.selectedEmpId;
-                if (targetEmp && !(session.selectedEmpId === targetEmp && activeOwnTab === "chat")) {
-                  chatBlinkActive.own[targetEmp] = true;
-                }
-              }
-              renderAllActiveViews();
-            });
-
-            Push.addListener("pushNotificationActionPerformed", (action) => {
-              const data = (action && action.notification && action.notification.data) || {};
-              openChatFromPushNotification(data.employeeId || null);
-            });
-          }
-
-          let perm = await Push.checkPermissions();
-          if (perm.receive !== "granted") {
-            perm = await Push.requestPermissions();
-          }
-          if (perm.receive === "granted") {
-            await Push.register();
-          } else if (tokEl) {
-            tokEl.textContent = "Permiso de notificaciones no concedido";
-          }
-        } catch (err) {
-          if (tokEl) tokEl.textContent = "Error FCM: " + (err && err.message ? err.message : err);
-        }
+        if (envEl) envEl.textContent = isCapacitorNative() ? "Android nativo (Capacitor)" : "Navegador web";
+        if (tokEl) tokEl.textContent = fcmTokenValue || "Sin push externa activa";
       }
 
-      // ---------- Persistencia local + Firebase Realtime Database ----------
       function localKeyForHome(code) {
         return `${STORAGE_PREFIX}home_${code.toUpperCase()}`;
       }
@@ -1699,7 +1557,6 @@
         }
       }
 
-      // ---------- Reglas de negocio: tarifas, turnos, confirmaciones y chat ----------
       function getRateForDate(emp, dateKey) {
         if (!emp) return 10;
         const history = Array.isArray(emp.rateHistory) && emp.rateHistory.length
@@ -1740,6 +1597,7 @@
           id: msgId,
           senderRole,
           senderName,
+          senderUid: getOrCreateAnonUid(),
           text: text.trim(),
           createdAt: Date.now(),
           isSystem: Boolean(isSystem)
@@ -1801,7 +1659,6 @@
         stopChatSound();
       }
 
-      // Fichar entrada (Empleada)
       async function performClockIn(empId, actorLabel) {
         const emp = homeData.employees[empId];
         if (!emp) return;
@@ -1835,7 +1692,6 @@
         showToast(`Entrada fichada a las ${formatTimeHHMM(now)}`);
       }
 
-      // Fichar salida (Empleada: pide confirmación al pulsar salida; al fichar salida queda pendiente de confirmar)
       function promptClockOut(empId) {
         const emp = homeData.employees[empId];
         const active = getActiveShift(empId);
@@ -1882,7 +1738,6 @@
         };
       }
 
-      // Confirmar turno una sola vez desde Propietario
       async function confirmShiftOnce(shiftId) {
         if (!homeData || !homeData.shifts[shiftId]) return;
         const s = homeData.shifts[shiftId];
@@ -1909,7 +1764,6 @@
         showToast("Turno confirmado.");
       }
 
-      // Editar horas de un turno desde Propietario antes o después de confirmar
       function openEditShiftModal(shiftId) {
         const s = homeData && homeData.shifts[shiftId];
         if (!s) return;
@@ -2008,7 +1862,6 @@
         };
       }
 
-      // Alerta si supera en más de 1 hora las horas diarias de la ficha (sin alterar el fichaje)
       function getOvertimeAlerts() {
         if (!homeData) return [];
         const alerts = [];
@@ -2045,7 +1898,6 @@
         return alerts;
       }
 
-      // ---------- Cálculos de calendario mensual sin redondeo ----------
       function computeMonthStats(empId, year, monthIndex) {
         const emp = homeData && homeData.employees[empId];
         const ym = `${year}-${pad2(monthIndex + 1)}`;
@@ -2125,7 +1977,6 @@
         };
       }
 
-      // ---------- Renderizado general ----------
       function escapeHtml(str) {
         return String(str || "")
           .replace(/&/g, "&amp;")
@@ -2203,7 +2054,6 @@
         }
       }
 
-      // ---------- Renderizado Vista Empleada ----------
       function renderEmployeeView() {
         const emp = homeData.employees[session.employeeId];
         if (!emp) {
@@ -2355,9 +2205,9 @@
         }
       }
 
-      // ---------- Renderizado Vista Propietario (sin fichaje ni cronómetro) ----------
       function renderOwnerView() {
         document.getElementById("ownerHomeMeta").textContent = `Hogar: ${homeData.code}`;
+        updateDeviceInfoLabels();
 
         const alerts = getOvertimeAlerts();
         const alertsBox = document.getElementById("ownerAlertsContainer");
@@ -2802,7 +2652,6 @@
         document.getElementById("modalPanel").innerHTML = "";
       }
 
-      // ---------- Eventos de UI y autenticación ----------
       function initEvents() {
         document.getElementById("btnTabletToggle").onclick = () => {
           const next = !document.body.classList.contains("tablet-mode");
@@ -2878,8 +2727,7 @@
             session.role = "owner";
             document.getElementById("ownerPassInput").value = "";
             startPolling();
-            await syncCurrentSessionToken();
-            initCapacitorPushBridge();
+            updateDeviceInfoLabels();
             renderAllActiveViews();
             showToast(`Hogar configurado. Contraseña máster: ${initialPass}`);
             return;
@@ -2894,8 +2742,7 @@
           session.role = "owner";
           document.getElementById("ownerPassInput").value = "";
           startPolling();
-          await syncCurrentSessionToken();
-          initCapacitorPushBridge();
+          updateDeviceInfoLabels();
           renderAllActiveViews();
         };
 
@@ -2924,12 +2771,10 @@
           document.getElementById("empPassInput").value = "";
           lastSeenChatCount.emp = getChatMessages(empId).length;
           startPolling();
-          await syncCurrentSessionToken();
-          initCapacitorPushBridge();
+          updateDeviceInfoLabels();
           renderAllActiveViews();
         };
 
-        // Pestañas empleada
         document.querySelectorAll("[data-emp-tab]").forEach((btn) => {
           btn.onclick = () => {
             activeEmpTab = btn.getAttribute("data-emp-tab");
@@ -2980,7 +2825,6 @@
           lastSeenChatCount.emp = getChatMessages(session.employeeId).length;
         };
 
-        // Pestañas propietario
         document.querySelectorAll("[data-own-tab]").forEach((btn) => {
           btn.onclick = () => {
             activeOwnTab = btn.getAttribute("data-own-tab");
@@ -3052,7 +2896,6 @@
           lastSeenChatCount.own[session.selectedEmpId] = getChatMessages(session.selectedEmpId).length;
         };
 
-        // Alta empleada
         document.getElementById("addEmployeeForm").onsubmit = async (e) => {
           e.preventDefault();
           const nameInput = document.getElementById("newEmpName");
@@ -3086,16 +2929,14 @@
           showToast(`Empleada "${name}" creada.`);
         };
 
-        // Botones FCM en Ajustes Propietario
         document.getElementById("btnRefreshPushToken").onclick = () => {
-          initCapacitorPushBridge();
-          showToast("Comprobando registro FCM...");
+          updateDeviceInfoLabels();
+          showToast("Dispositivo comprobado.");
         };
         document.getElementById("btnTestPushSound").onclick = () => {
           triggerChatAlertBurst();
         };
 
-        // Cambiar contraseña máster
         document.getElementById("changeMasterPassForm").onsubmit = async (e) => {
           e.preventDefault();
           const inp = document.getElementById("newMasterPassInput");
@@ -3108,7 +2949,6 @@
           showToast("Contraseña máster actualizada.");
         };
 
-        // Compartir enlace / código
         const copyText = (text, label) => {
           if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text).then(() => showToast(`${label} copiado`)).catch(() => showToast(text));
@@ -3143,7 +2983,6 @@
           document.getElementById("modalCloseBtn").onclick = closeModal;
         };
 
-        // Refresco en vivo cada 15s
         setInterval(() => {
           if (session.role && homeData) {
             renderAllActiveViews();
@@ -3151,12 +2990,11 @@
         }, 15000);
       }
 
-      // ---------- Inicio ----------
       async function boot() {
         getOrCreateAnonUid();
         applyTabletModePref();
         initEvents();
-        initCapacitorPushBridge();
+        updateDeviceInfoLabels();
 
         const params = new URLSearchParams(window.location.search);
         const queryHome = (params.get("hogar") || "").trim().toUpperCase();
