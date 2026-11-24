@@ -103,7 +103,6 @@
       padding-bottom: max(12px, env(safe-area-inset-bottom));
     }
 
-    /* Top bar: fondo sólido sin backdrop-filter para evitar franjas al abrir el teclado en WebView */
     .topbar {
       position: sticky;
       top: 0;
@@ -202,7 +201,6 @@
       color: var(--primary-dark);
     }
 
-    /* Main container */
     .main-container {
       width: 100%;
       max-width: 1280px;
@@ -212,7 +210,6 @@
       min-width: 0;
     }
 
-    /* Cards & sections */
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -296,7 +293,6 @@
       font-size: 12px;
     }
 
-    /* Role selector */
     .role-grid {
       display: grid;
       grid-template-columns: 1fr;
@@ -331,7 +327,6 @@
       font-size: 16px;
     }
 
-    /* Tabs */
     .tabs {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -393,7 +388,6 @@
       animation: blinkTab 0.65s ease-in-out infinite;
     }
 
-    /* Crono & Fichaje */
     .chrono-box {
       background: linear-gradient(145deg, #0f172a, #1e293b);
       color: #fff;
@@ -437,7 +431,6 @@
       font-weight: 800;
     }
 
-    /* Tablet landscape mode toggle */
     .two-col-zone {
       display: flex;
       flex-direction: column;
@@ -452,7 +445,6 @@
       gap: 14px;
     }
 
-    /* Alerts */
     .alert-banner {
       border-radius: var(--radius-sm);
       padding: 9px 12px;
@@ -473,7 +465,6 @@
       color: #7f1d1d;
     }
 
-    /* Tasks */
     .task-item {
       display: flex;
       align-items: flex-start;
@@ -511,7 +502,6 @@
       color: var(--muted);
     }
 
-    /* Calendar */
     .cal-header {
       display: flex;
       align-items: center;
@@ -637,7 +627,6 @@
       border: 1px solid var(--border);
     }
 
-    /* Chat: más aire y altura equilibrada manteniendo siempre visible Enviar */
     .chat-box {
       display: flex;
       flex-direction: column;
@@ -723,7 +712,6 @@
       font-size: 14px;
     }
 
-    /* Compact employee picker row for owner */
     .emp-picker-inline {
       display: flex;
       align-items: center;
@@ -744,7 +732,6 @@
       font-weight: 700;
     }
 
-    /* Shift rows & summary */
     .kpi-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -797,7 +784,6 @@
     .badge.confirmed { background: var(--success-bg); color: #166534; border: 1px solid var(--success-border); }
     .badge.active { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
 
-    /* Modal */
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -879,7 +865,6 @@
     </header>
 
     <main class="main-container">
-      <!-- PANTALLA 1: ACCESO / ROL / HOGAR -->
       <section id="viewAuth" class="card">
         <div class="card-title">Acceso a homecontrol</div>
         <p class="muted" id="authSubtitle">Elige cómo deseas entrar y enlaza tu código de hogar.</p>
@@ -906,7 +891,6 @@
             </button>
           </div>
 
-          <!-- Formulario Propietario -->
           <div id="ownerAuthBox" class="card stack hidden" style="margin: 4px 0 0; background: var(--surface-alt);">
             <div id="ownerSetupNotice" class="alert-banner hidden">
               <div><strong>Primer acceso al hogar:</strong> establece la contraseña máster (por defecto puedes usar <code>1234</code> o la que elijas).</div>
@@ -918,7 +902,6 @@
             <button type="button" class="btn-primary" id="btnEnterOwner">Entrar como Propietario</button>
           </div>
 
-          <!-- Formulario Empleado -->
           <div id="employeeAuthBox" class="card stack hidden" style="margin: 4px 0 0; background: var(--surface-alt);">
             <label class="field-label">
               Selecciona tu nombre
@@ -935,7 +918,6 @@
         </div>
       </section>
 
-      <!-- PANTALLA 2: ESPACIO EMPLEADA -->
       <section id="viewEmployee" class="hidden">
         <div class="card card-compact">
           <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
@@ -959,7 +941,6 @@
           <button type="button" class="tab-btn" id="empChatTabBtn" data-emp-tab="chat">💬 Chat</button>
         </nav>
 
-        <!-- Tab 1: Fichaje + Tareas -->
         <div id="empTabFichaje" class="two-col-zone">
           <div class="card">
             <div class="chrono-box">
@@ -990,7 +971,6 @@
           </div>
         </div>
 
-        <!-- Tab 2: Calendario Mensual Empleada -->
         <div id="empTabCalendario" class="card hidden">
           <div class="cal-header">
             <button type="button" class="btn-ghost btn-sm" id="empPrevMonth">◀ Mes ant.</button>
@@ -1025,7 +1005,6 @@
           </div>
         </div>
 
-        <!-- Tab 3: Chat Empleada -->
         <div id="empTabChat" class="card card-compact hidden">
           <div class="card-title" style="margin-bottom: 6px;">Chat del espacio</div>
           <div class="chat-box">
@@ -1038,7 +1017,6 @@
         </div>
       </section>
 
-      <!-- PANTALLA 3: ESPACIO PROPIETARIO -->
       <section id="viewOwner" class="hidden">
         <div class="card card-compact">
           <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
@@ -1059,7 +1037,6 @@
           <button type="button" class="tab-btn" data-own-tab="ajustes">⚙ Empleadas y Hogar</button>
         </nav>
 
-        <!-- Selector compacto de empleada activa (sin detalles extra) -->
         <div class="card card-compact" id="ownerEmployeeSelectorCard">
           <div class="emp-picker-inline">
             <span>Empleada:</span>
@@ -1067,7 +1044,6 @@
           </div>
         </div>
 
-        <!-- Tab 1: Turnos + Tareas -->
         <div id="ownTabControl" class="two-col-zone">
           <div class="card">
             <div class="card-title">
@@ -1091,7 +1067,6 @@
           </div>
         </div>
 
-        <!-- Tab 2: Calendario Mensual y Pagos -->
         <div id="ownTabCalendario" class="card hidden">
           <div class="cal-header">
             <button type="button" class="btn-ghost btn-sm" id="ownPrevMonth">◀ Mes ant.</button>
@@ -1146,7 +1121,6 @@
           </div>
         </div>
 
-        <!-- Tab 3: Chat Propietario -->
         <div id="ownTabChat" class="card card-compact hidden">
           <div class="card-title" id="ownChatTitle" style="margin-bottom: 6px;">Chat</div>
           <div class="chat-box">
@@ -1158,7 +1132,6 @@
           </div>
         </div>
 
-        <!-- Tab 4: Empleadas y Ajustes Hogar -->
         <div id="ownTabAjustes" class="stack hidden">
           <div class="card">
             <div class="card-title">Añadir empleada</div>
@@ -1224,7 +1197,6 @@
     </main>
   </div>
 
-  <!-- Modal genérico -->
   <div id="modalBackdrop" class="modal-backdrop hidden" role="dialog" aria-modal="true">
     <div class="modal-panel" id="modalPanel"></div>
   </div>
@@ -1265,7 +1237,10 @@
       let audioCtx = null;
 
       let pollTimerId = null;
+      let chronoTimerId = null;
       let isSyncing = false;
+      let hasUnsyncedLocalChanges = false;
+      let localWriteGraceUntil = 0;
       let pendingSaveMutators = [];
       let lastCalSignature = { emp: "", own: "" };
 
@@ -1376,6 +1351,7 @@
         return {
           code,
           createdAt: Date.now(),
+          updatedAt: Date.now(),
           masterPassword: String(masterPassword || "1234"),
           employees: {},
           shifts: {},
@@ -1391,6 +1367,7 @@
         return {
           code: raw.code || base.code,
           createdAt: raw.createdAt || base.createdAt,
+          updatedAt: Number(raw.updatedAt || raw.createdAt || base.createdAt),
           masterPassword: raw.masterPassword || base.masterPassword,
           employees: raw.employees && typeof raw.employees === "object" ? raw.employees : {},
           shifts: raw.shifts && typeof raw.shifts === "object" ? raw.shifts : {},
@@ -1505,6 +1482,8 @@
 
         if (!homeData.chats[empId]) homeData.chats[empId] = {};
         homeData.chats[empId][msgId] = msgObj;
+        homeData.updatedAt = Date.now();
+        localWriteGraceUntil = Date.now() + 6000;
         saveLocalHome(homeData);
 
         if (senderRole === "employee") {
@@ -1520,7 +1499,8 @@
           await pushSingleChatMessage(homeData.code, empId, msgObj);
           setSyncIndicator("ok", "Firebase en línea");
         } catch (_) {
-          setSyncIndicator("err", "Guardado local");
+          hasUnsyncedLocalChanges = true;
+          setSyncIndicator("err", "Pendiente subir (Local)");
         }
       }
 
@@ -1533,17 +1513,39 @@
         try {
           const remote = await fetchRemoteHome(clean);
           if (remote) {
+            if (local && (Number(local.updatedAt) || 0) > (Number(remote.updatedAt) || 0)) {
+              homeData = local;
+              saveLocalHome(homeData);
+              setSyncIndicator("sync", "Subiendo local...");
+              try {
+                await pushRemoteHome(homeData);
+                hasUnsyncedLocalChanges = false;
+                setSyncIndicator("ok", "Firebase en línea");
+              } catch (_) {
+                hasUnsyncedLocalChanges = true;
+                setSyncIndicator("err", "Pendiente subir (Local)");
+              }
+              return homeData;
+            }
             homeData = remote;
+            hasUnsyncedLocalChanges = false;
             saveLocalHome(homeData);
             setSyncIndicator("ok", "Firebase en línea");
             return homeData;
           }
           if (createIfMissing) {
             const fresh = local || createEmptyHome(clean, defaultMasterPass);
+            fresh.updatedAt = Date.now();
             homeData = fresh;
             saveLocalHome(homeData);
-            await pushRemoteHome(homeData);
-            setSyncIndicator("ok", "Firebase en línea");
+            try {
+              await pushRemoteHome(homeData);
+              hasUnsyncedLocalChanges = false;
+              setSyncIndicator("ok", "Firebase en línea");
+            } catch (_) {
+              hasUnsyncedLocalChanges = true;
+              setSyncIndicator("err", "Guardado local");
+            }
             return homeData;
           }
           if (local) {
@@ -1583,26 +1585,85 @@
             const nextFn = pendingSaveMutators.shift();
             nextFn(homeData);
           }
+          homeData.updatedAt = Date.now();
+          localWriteGraceUntil = Date.now() + 6000;
+          hasUnsyncedLocalChanges = true;
           saveLocalHome(homeData);
           renderAllActiveViews();
           setSyncIndicator("sync", "Guardando...");
           await pushRemoteHome(homeData);
+          hasUnsyncedLocalChanges = false;
           setSyncIndicator("ok", "Firebase en línea");
         } catch (_) {
-          setSyncIndicator("err", "Guardado local");
+          hasUnsyncedLocalChanges = true;
+          setSyncIndicator("err", "Error nube · Guardado local");
+          showToast("Sin respuesta de Firebase: guardado en local, reintentará.");
         } finally {
           isSyncing = false;
         }
       }
 
+      function startChronoTicker() {
+        if (chronoTimerId) clearInterval(chronoTimerId);
+        chronoTimerId = setInterval(() => {
+          if (!session.role || !homeData || document.hidden) return;
+          if (session.role === "employee" && activeEmpTab === "fichaje") {
+            const emp = homeData.employees[session.employeeId];
+            if (!emp) return;
+            const activeShift = getActiveShift(emp.id);
+            const todayKey = toDateKey(Date.now());
+            const shiftsToday = getEmployeeShifts(emp.id).filter((s) => s.dateKey === todayKey);
+            const todayTotalMin = shiftsToday.reduce((acc, s) => acc + getShiftMinutes(s), 0);
+            const disp = document.getElementById("chronoDisplay");
+            const sub = document.getElementById("chronoTodayTotal");
+            if (disp) {
+              disp.textContent = activeShift ? formatHM(getShiftMinutes(activeShift)) : "0h 00m";
+            }
+            if (sub) {
+              sub.textContent = `Total hoy: ${formatHM(todayTotalMin)}`;
+            }
+          }
+        }, 1000);
+      }
+
       function startPolling() {
         stopPolling();
+        startChronoTicker();
         pollTimerId = setInterval(async () => {
           if (!session.homeCode || isSyncing) return;
           if (document.hidden) return;
           try {
+            if (hasUnsyncedLocalChanges && homeData) {
+              setSyncIndicator("sync", "Reintentando subir...");
+              await pushRemoteHome(homeData);
+              hasUnsyncedLocalChanges = false;
+              setSyncIndicator("ok", "Firebase en línea");
+              return;
+            }
+
+            if (Date.now() < localWriteGraceUntil) {
+              return;
+            }
+
             const remote = await fetchRemoteHome(session.homeCode);
-            if (!remote) return;
+            if (!remote) {
+              if (homeData && Object.keys(homeData.shifts || {}).length > 0) {
+                setSyncIndicator("sync", "Subiendo datos...");
+                await pushRemoteHome(homeData);
+                setSyncIndicator("ok", "Firebase en línea");
+              }
+              return;
+            }
+
+            const localUpdated = Number(homeData && homeData.updatedAt) || 0;
+            const remoteUpdated = Number(remote.updatedAt) || 0;
+            if (localUpdated > remoteUpdated) {
+              setSyncIndicator("sync", "Subiendo cambios...");
+              await pushRemoteHome(homeData);
+              setSyncIndicator("ok", "Firebase en línea");
+              return;
+            }
+
             const prevSerialized = JSON.stringify(homeData);
             const nextSerialized = JSON.stringify(remote);
             if (prevSerialized !== nextSerialized) {
@@ -1613,7 +1674,7 @@
             }
             setSyncIndicator("ok", "Firebase en línea");
           } catch (_) {
-            setSyncIndicator("err", "Modo local");
+            setSyncIndicator("err", hasUnsyncedLocalChanges ? "Pendiente subir (Local)" : "Modo local");
           }
         }, 3500);
       }
@@ -1622,6 +1683,10 @@
         if (pollTimerId) {
           clearInterval(pollTimerId);
           pollTimerId = null;
+        }
+        if (chronoTimerId) {
+          clearInterval(chronoTimerId);
+          chronoTimerId = null;
         }
       }
 
@@ -3078,16 +3143,6 @@
           document.getElementById("modalCopyUrlBtn").onclick = () => copyText(url, "Enlace");
           document.getElementById("modalCloseBtn").onclick = closeModal;
         };
-
-        setInterval(() => {
-          if (session.role && homeData && !document.hidden) {
-            if (session.role === "employee" && activeEmpTab === "fichaje") {
-              renderEmployeeView();
-            } else if (session.role === "owner" && activeOwnTab === "control") {
-              renderOwnerView();
-            }
-          }
-        }, 20000);
       }
 
       async function boot() {
